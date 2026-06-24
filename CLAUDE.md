@@ -28,6 +28,10 @@ cd backend && source venv/bin/activate && uvicorn main:app --reload
 cd frontend && npm run dev
 ```
 
+## Version control
+
+This project is a git repository. Use standard git workflows for commits and pushes.
+
 ## Hard constraints — never violate these
 
 - No paid data APIs — yfinance only

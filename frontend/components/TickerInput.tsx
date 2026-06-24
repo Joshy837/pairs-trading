@@ -10,37 +10,30 @@ interface Props {
 
 export default function TickerInput({ ticker1, ticker2, loading, onChange, onSubmit }: Props) {
   return (
-    <div className="flex flex-col sm:flex-row gap-3 items-end">
-      <div className="flex-1">
-        <label className="block label mb-1">
-          Ticker 1
-        </label>
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex items-center gap-2">
         <input
           type="text"
           value={ticker1}
           onChange={(e) => onChange(e.target.value.toUpperCase(), ticker2)}
-          placeholder="e.g. KO"
+          placeholder="KO"
           maxLength={10}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-24 border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-base font-mono font-semibold uppercase tracking-widest placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-primary"
         />
-      </div>
-      <div className="flex-1">
-        <label className="block label mb-1">
-          Ticker 2
-        </label>
+        <span className="text-sm font-medium text-muted select-none">vs</span>
         <input
           type="text"
           value={ticker2}
           onChange={(e) => onChange(ticker1, e.target.value.toUpperCase())}
-          placeholder="e.g. PEP"
+          placeholder="PEP"
           maxLength={10}
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary"
+          className="w-24 border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-base font-mono font-semibold uppercase tracking-widest placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-primary"
         />
       </div>
       <button
         onClick={onSubmit}
         disabled={loading || !ticker1 || !ticker2}
-        className="px-6 py-2 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+        className="px-5 py-2 bg-primary text-white text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
       >
         {loading ? "Analyzing…" : "Analyze Pair"}
       </button>

@@ -12,7 +12,7 @@ function Badge({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
   return (
     <span
       className={`inline-block px-2 py-0.5 text-xs font-semibold rounded ${
-        ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+        ok ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
       }`}
     >
       {ok ? yes : no}
@@ -24,7 +24,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <tr className="border-t border-divider">
       <td className="py-1.5 pr-4 text-xs text-muted whitespace-nowrap">{label}</td>
-      <td className="py-1.5 text-xs font-mono text-gray-800">{value}</td>
+      <td className="py-1.5 text-xs font-mono text-subtle">{value}</td>
     </tr>
   );
 }
@@ -37,11 +37,11 @@ export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
       {/* Verdict */}
       <div
         className={`rounded-lg p-4 text-center ${
-          is_cointegrated ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"
+          is_cointegrated ? "bg-green-500/10 border border-green-500/20" : "bg-red-500/10 border border-red-500/20"
         }`}
       >
         <div
-          className={`text-lg font-bold ${is_cointegrated ? "text-green-700" : "text-red-700"}`}
+          className={`text-lg font-bold ${is_cointegrated ? "text-green-400" : "text-red-400"}`}
         >
           {is_cointegrated ? "Cointegrated" : "Not Cointegrated"}
         </div>
@@ -91,7 +91,7 @@ export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
       </div>
 
       {!is_cointegrated && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+        <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded p-3">
           Neither test finds cointegration at the 95% level. Backtest results may not be
           statistically meaningful.
         </p>

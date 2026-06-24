@@ -19,10 +19,10 @@ function MetricBox({
 }) {
   const color =
     positive === undefined
-      ? "text-gray-800"
+      ? "text-subtle"
       : positive
-      ? "text-green-600"
-      : "text-red-600";
+      ? "text-green-400"
+      : "text-red-400";
 
   return (
     <div className="bg-surface rounded-lg p-4 text-center">

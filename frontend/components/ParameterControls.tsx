@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Parameters } from "@/types";
 
 interface Props {
@@ -18,13 +19,39 @@ interface SliderFieldProps {
 }
 
 function SliderField({ label, value, min, max, step, unit, onChange }: SliderFieldProps) {
+  const [inputVal, setInputVal] = useState(String(value));
+
+  useEffect(() => {
+    setInputVal(String(value));
+  }, [value]);
+
+  function commitInput(raw: string) {
+    const v = Number(raw);
+    if (!isNaN(v) && v >= min && v <= max) {
+      onChange(v);
+    } else {
+      setInputVal(String(value));
+    }
+  }
+
   return (
     <div>
-      <div className="flex justify-between mb-1">
+      <div className="flex items-center justify-between mb-1">
         <label className="label">{label}</label>
-        <span className="text-xs font-mono text-subtle">
-          {value}{unit}
-        </span>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onBlur={(e) => commitInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && commitInput(inputVal)}
+            className="w-14 text-right text-xs font-mono text-subtle bg-panel border border-transparent hover:border-divider focus:border-primary focus:outline-none rounded px-1 py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          {unit && <span className="text-xs text-faint">{unit.trim()}</span>}
+        </div>
       </div>
       <input
         type="range"

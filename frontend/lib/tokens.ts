@@ -2,16 +2,16 @@
 // Import these into Recharts components instead of using raw hex strings.
 
 export const CHART_COLORS = {
-  spread: "#4f46e5",  // primary
-  zscore: "#7c3aed",  // violet-600
-  equity: "#16a34a",  // green-600
-  entry:  "#ef4444",  // red-500  — z-score entry bands
-  exit:   "#16a34a",  // green-600 — z-score exit bands
-  grid:   "#f3f4f6",  // divider
-  zero:   "#d1d5db",  // gray-300 — zero / baseline reference lines
+  spread: "#818cf8",  // indigo-400  — brighter on dark
+  zscore: "#a78bfa",  // violet-400
+  equity: "#4ade80",  // green-400
+  entry:  "#f87171",  // red-400     — z-score entry bands
+  exit:   "#4ade80",  // green-400   — z-score exit bands
+  grid:   "#374151",  // divider     — subtle dark grid
+  zero:   "#4b5563",  // gray-600    — zero / baseline reference lines
 } as const;
 
 export const CHART_AXIS = {
   fontSize: 11,
-  fill: "#6b7280",    // muted
+  fill: "#9ca3af",    // muted (gray-400, readable on dark)
 } as const;

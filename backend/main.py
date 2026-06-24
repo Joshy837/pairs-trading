@@ -41,11 +41,16 @@ class AnalyzeRequest(BaseModel):
 class BacktestRequest(AnalyzeRequest):
     entry_z: float = Field(default=2.0, ge=0.5, le=4.0)
     exit_z: float = Field(default=0.5, ge=0.0, le=2.0)
+    stop_z: float = Field(default=4.0, ge=2.5, le=6.0)
+    transaction_cost_bps: float = Field(default=5.0, ge=0.0, le=50.0)
+    insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
 
     @model_validator(mode="after")
     def check_thresholds(self) -> "BacktestRequest":
         if self.exit_z >= self.entry_z:
             raise ValueError("exit_z must be strictly less than entry_z.")
+        if self.entry_z >= self.stop_z:
+            raise ValueError("stop_z must be strictly greater than entry_z.")
         return self
 
 
@@ -126,7 +131,15 @@ def backtest(req: BacktestRequest) -> dict:
     """
     try:
         p1, p2 = fetch_prices(req.ticker1, req.ticker2, req.lookback_days)
-        return run_backtest(p1, p2, req.zscore_window, req.entry_z, req.exit_z)
+        return run_backtest(
+            p1, p2,
+            req.zscore_window,
+            req.entry_z,
+            req.exit_z,
+            req.stop_z,
+            req.transaction_cost_bps,
+            req.insample_pct,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

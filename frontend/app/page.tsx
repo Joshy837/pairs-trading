@@ -16,6 +16,9 @@ const DEFAULT_PARAMS: Parameters = {
   zscore_window: 30,
   entry_z: 2.0,
   exit_z: 0.5,
+  stop_z: 4.0,
+  transaction_cost_bps: 5,
+  insample_pct: 70,
 };
 
 const PRESET_PAIRS = [
@@ -57,7 +60,12 @@ export default function Page() {
     setBacktest(null);
     setLoading(true);
 
-    const body = JSON.stringify({ ticker1, ticker2, ...params });
+    const body = JSON.stringify({
+      ticker1,
+      ticker2,
+      ...params,
+      insample_pct: params.insample_pct / 100,
+    });
 
     try {
       const [analysisRes, backtestRes] = await Promise.all([
@@ -169,6 +177,8 @@ export default function Page() {
                   data={analysis}
                   entryZ={params.entry_z}
                   exitZ={params.exit_z}
+                  stopZ={params.stop_z}
+                  insampleEndDate={backtest?.insample_end_date}
                   ticker1={ticker1}
                   ticker2={ticker2}
                 />
@@ -183,7 +193,7 @@ export default function Page() {
                   <p className="text-xs font-medium text-muted mb-2">
                     Equity Curve (starts at $100)
                   </p>
-                  <EquityCurve data={backtest} />
+                  <EquityCurve data={backtest} insampleEndDate={backtest.insample_end_date} />
                 </div>
               </div>
             </Card>
@@ -229,7 +239,18 @@ export default function Page() {
                             <td className="py-1.5 pr-4 font-mono text-muted">
                               {t.exit_date ?? "—"}
                             </td>
-                            <td className="py-1.5 pr-4 font-mono text-muted">{t.exit_z ?? "—"}</td>
+                            <td className="py-1.5 pr-4 font-mono">
+                              {t.exit_z !== undefined ? (
+                                <span className={t.stop_triggered ? "text-amber-400" : "text-muted"}>
+                                  {t.exit_z}
+                                  {t.stop_triggered && (
+                                    <span className="ml-1 text-xs font-semibold">STOP</span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-muted">—</span>
+                              )}
+                            </td>
                             <td className="py-1.5 font-mono text-muted">
                               {duration !== null ? `${duration}d` : "open"}
                             </td>

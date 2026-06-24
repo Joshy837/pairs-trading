@@ -27,6 +27,7 @@ export interface Trade {
   entry_z: number;
   exit_date?: string;
   exit_z?: number;
+  stop_triggered?: boolean;
 }
 
 export interface BacktestMetrics {
@@ -44,6 +45,7 @@ export interface BacktestResult {
   spread: (number | null)[];
   zscore: (number | null)[];
   hedge_ratio: number;
+  insample_end_date: string;
 }
 
 export interface Parameters {
@@ -51,6 +53,9 @@ export interface Parameters {
   zscore_window: number;
   entry_z: number;
   exit_z: number;
+  stop_z: number;
+  transaction_cost_bps: number;
+  insample_pct: number; // integer 50–90; divided by 100 before sending to API
 }
 
 export interface ScanPairResult {

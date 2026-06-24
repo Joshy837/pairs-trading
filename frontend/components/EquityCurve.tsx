@@ -15,9 +15,10 @@ import { CHART_AXIS, CHART_COLORS } from "@/lib/tokens";
 
 interface Props {
   data: BacktestResult;
+  insampleEndDate?: string;
 }
 
-export default function EquityCurve({ data }: Props) {
+export default function EquityCurve({ data, insampleEndDate }: Props) {
   const chartData = data.dates.map((date, i) => ({
     date,
     equity: data.equity_curve[i] !== null ? Number(data.equity_curve[i]?.toFixed(2)) : undefined,
@@ -43,6 +44,14 @@ export default function EquityCurve({ data }: Props) {
           contentStyle={{ fontSize: CHART_AXIS.fontSize }}
         />
         <ReferenceLine y={100} stroke={CHART_COLORS.zero} strokeDasharray="4 3" />
+        {insampleEndDate && (
+          <ReferenceLine
+            x={insampleEndDate}
+            stroke={CHART_COLORS.zero}
+            strokeDasharray="6 3"
+            label={{ value: "OOS →", fill: "#9ca3af", fontSize: 9, position: "insideTopRight" }}
+          />
+        )}
         <Line
           type="monotone"
           dataKey="equity"

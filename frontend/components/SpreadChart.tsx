@@ -17,11 +17,13 @@ interface Props {
   data: AnalysisResult;
   entryZ: number;
   exitZ: number;
+  stopZ?: number;
+  insampleEndDate?: string;
   ticker1: string;
   ticker2: string;
 }
 
-export default function SpreadChart({ data, entryZ, exitZ, ticker1, ticker2 }: Props) {
+export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDate, ticker1, ticker2 }: Props) {
   const chartData = data.dates.map((date, i) => ({
     date,
     spread: data.spread[i] !== null ? Number(data.spread[i]?.toFixed(4)) : undefined,
@@ -47,6 +49,13 @@ export default function SpreadChart({ data, entryZ, exitZ, ticker1, ticker2 }: P
               labelStyle={{ fontSize: CHART_AXIS.fontSize }}
               contentStyle={{ fontSize: CHART_AXIS.fontSize }}
             />
+            {insampleEndDate && (
+              <ReferenceLine
+                x={insampleEndDate}
+                stroke={CHART_COLORS.zero}
+                strokeDasharray="6 3"
+              />
+            )}
             <Line
               type="monotone"
               dataKey="spread"
@@ -66,6 +75,9 @@ export default function SpreadChart({ data, entryZ, exitZ, ticker1, ticker2 }: P
           <span className="text-red-500">— entry ±{entryZ}</span>
           &nbsp;
           <span className="text-green-600">— exit ±{exitZ}</span>
+          {stopZ !== undefined && (
+            <>&nbsp;<span className="text-amber-500">— stop ±{stopZ}</span></>
+          )}
         </p>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
@@ -102,6 +114,20 @@ export default function SpreadChart({ data, entryZ, exitZ, ticker1, ticker2 }: P
               strokeDasharray="4 3"
               strokeWidth={1}
             />
+            {stopZ !== undefined && (
+              <>
+                <ReferenceLine y={stopZ} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1} />
+                <ReferenceLine y={-stopZ} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1} />
+              </>
+            )}
+            {insampleEndDate && (
+              <ReferenceLine
+                x={insampleEndDate}
+                stroke={CHART_COLORS.zero}
+                strokeDasharray="6 3"
+                label={{ value: "OOS →", fill: "#9ca3af", fontSize: 9, position: "insideTopRight" }}
+              />
+            )}
             <Line
               type="monotone"
               dataKey="zscore"

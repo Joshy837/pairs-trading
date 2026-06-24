@@ -115,6 +115,32 @@ export default function ParameterControls({ params, onChange }: Props) {
         step={0.1}
         onChange={set("exit_z")}
       />
+      <SliderField
+        label="Stop-Loss Z"
+        value={params.stop_z}
+        min={2.5}
+        max={6.0}
+        step={0.5}
+        onChange={set("stop_z")}
+      />
+      <SliderField
+        label="Transaction Cost"
+        value={params.transaction_cost_bps}
+        min={0}
+        max={50}
+        step={1}
+        unit=" bps"
+        onChange={set("transaction_cost_bps")}
+      />
+      <SliderField
+        label="In-Sample Split"
+        value={params.insample_pct}
+        min={50}
+        max={90}
+        step={5}
+        unit="%"
+        onChange={set("insample_pct")}
+      />
     </div>
   );
 }

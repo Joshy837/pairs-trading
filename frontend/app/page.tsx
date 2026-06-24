@@ -155,7 +155,7 @@ export default function Page() {
                     setTicker1(a);
                     setTicker2(b);
                   }}
-                  className="px-3 py-1.5 text-xs font-mono bg-surface border border-divider rounded-md hover:border-primary hover:text-primary transition-colors"
+                  className="px-3 py-1.5 text-xs font-mono text-muted bg-surface border border-divider rounded-md hover:border-primary hover:text-primary transition-colors"
                 >
                   {a} / {b}
                 </button>

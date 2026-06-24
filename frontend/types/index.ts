@@ -19,6 +19,8 @@ export interface AnalysisResult {
   spread: (number | null)[];
   zscore: (number | null)[];
   dates: string[];
+  rolling_hedge: (number | null)[];
+  rolling_hedge_window: number;
 }
 
 export interface Trade {
@@ -28,6 +30,7 @@ export interface Trade {
   exit_date?: string;
   exit_z?: number;
   stop_triggered?: boolean;
+  pnl?: number | null;
 }
 
 export interface BacktestMetrics {

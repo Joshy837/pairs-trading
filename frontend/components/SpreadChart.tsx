@@ -4,6 +4,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -89,6 +90,11 @@ export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDat
               labelStyle={{ fontSize: CHART_AXIS.fontSize }}
               contentStyle={{ fontSize: CHART_AXIS.fontSize }}
             />
+            {/* Exit zone: mean-reversion achieved — subtle green center band */}
+            <ReferenceArea y1={-exitZ} y2={exitZ} fill={CHART_COLORS.exit} fillOpacity={0.06} strokeOpacity={0} />
+            {/* Entry-to-stop zone: active trade region — subtle red outer bands */}
+            <ReferenceArea y1={entryZ} y2={stopZ ?? entryZ * 2} fill={CHART_COLORS.entry} fillOpacity={0.08} strokeOpacity={0} />
+            <ReferenceArea y1={-(stopZ ?? entryZ * 2)} y2={-entryZ} fill={CHART_COLORS.entry} fillOpacity={0.08} strokeOpacity={0} />
             <ReferenceLine y={0} stroke={CHART_COLORS.zero} />
             <ReferenceLine
               y={entryZ}

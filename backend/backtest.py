@@ -161,6 +161,22 @@ def run_backtest(
 
     insample_end_date = price1.index[insample_cutoff - 1].strftime("%Y-%m-%d")
 
+    # Per-trade P&L: equity change from entry signal day to exit day
+    date_to_idx = {price1.index[i].strftime("%Y-%m-%d"): i for i in range(len(price1))}
+    for trade in trades:
+        entry_i = date_to_idx.get(trade["date"])
+        exit_date = trade.get("exit_date")
+        if entry_i is not None and exit_date is not None:
+            exit_i = date_to_idx.get(exit_date)
+            if exit_i is not None:
+                entry_eq = float(equity.iloc[entry_i])
+                exit_eq = float(equity.iloc[exit_i])
+                trade["pnl"] = round(exit_eq / entry_eq - 1, 4) if entry_eq != 0 else None
+            else:
+                trade["pnl"] = None
+        else:
+            trade["pnl"] = None
+
     oos_returns = portfolio_returns.iloc[insample_cutoff:]
     oos_equity = equity.iloc[insample_cutoff:]
 

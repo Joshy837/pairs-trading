@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import CointegrationPanel from "@/components/CointegrationPanel";
 import EquityCurve from "@/components/EquityCurve";
+import HedgeStabilityChart from "@/components/HedgeStabilityChart";
 import ParameterControls from "@/components/ParameterControls";
 import ResultsPanel from "@/components/ResultsPanel";
 import SpreadChart from "@/components/SpreadChart";
 import TickerInput from "@/components/TickerInput";
+import TradeLog from "@/components/TradeLog";
 import { AnalysisResult, BacktestResult, Parameters } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -198,68 +200,15 @@ export default function Page() {
               </div>
             </Card>
 
+            {/* Hedge ratio stability */}
+            <Card title="Hedge Ratio Stability">
+              <HedgeStabilityChart data={analysis} insampleEndDate={backtest.insample_end_date} />
+            </Card>
+
             {/* Trade log */}
             {backtest.trades.length > 0 && (
-              <Card title={`Trade Log — ${backtest.trades.length} entries`}>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-faint border-b border-divider">
-                        <th className="pb-2 pr-4 font-medium">Entry Date</th>
-                        <th className="pb-2 pr-4 font-medium">Direction</th>
-                        <th className="pb-2 pr-4 font-medium">Entry Z</th>
-                        <th className="pb-2 pr-4 font-medium">Exit Date</th>
-                        <th className="pb-2 pr-4 font-medium">Exit Z</th>
-                        <th className="pb-2 font-medium">Duration</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {backtest.trades.map((t, i) => {
-                        const duration = t.exit_date
-                          ? Math.round(
-                              (new Date(t.exit_date).getTime() - new Date(t.date).getTime()) /
-                                86400000
-                            )
-                          : null;
-                        return (
-                          <tr key={i} className="border-t border-divider">
-                            <td className="py-1.5 pr-4 font-mono text-muted">{t.date}</td>
-                            <td className="py-1.5 pr-4">
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-xs font-semibold ${
-                                  t.type === "long"
-                                    ? "bg-green-500/15 text-green-400"
-                                    : "bg-red-500/15 text-red-400"
-                                }`}
-                              >
-                                {t.type.toUpperCase()}
-                              </span>
-                            </td>
-                            <td className="py-1.5 pr-4 font-mono text-muted">{t.entry_z}</td>
-                            <td className="py-1.5 pr-4 font-mono text-muted">
-                              {t.exit_date ?? "—"}
-                            </td>
-                            <td className="py-1.5 pr-4 font-mono">
-                              {t.exit_z !== undefined ? (
-                                <span className={t.stop_triggered ? "text-amber-400" : "text-muted"}>
-                                  {t.exit_z}
-                                  {t.stop_triggered && (
-                                    <span className="ml-1 text-xs font-semibold">STOP</span>
-                                  )}
-                                </span>
-                              ) : (
-                                <span className="text-muted">—</span>
-                              )}
-                            </td>
-                            <td className="py-1.5 font-mono text-muted">
-                              {duration !== null ? `${duration}d` : "open"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              <Card title="Trade Log">
+                <TradeLog trades={backtest.trades} />
               </Card>
             )}
           </div>

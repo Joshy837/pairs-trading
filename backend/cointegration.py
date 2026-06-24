@@ -113,6 +113,27 @@ def compute_half_life(spread: pd.Series) -> "float | None":
     return float(-math.log(2) / math.log(1 + gamma))
 
 
+def compute_rolling_hedge(price1: pd.Series, price2: pd.Series, window: int) -> pd.Series:
+    """
+    Rolling OLS hedge ratio using a fixed lookback window.
+
+    β_t = cov(price2_t, price1_t) / var(price2_t) over [t-window+1, t].
+    First `window - 1` values are NaN (insufficient history).
+    """
+    n = len(price1)
+    vals = np.full(n, np.nan)
+    p1 = price1.values
+    p2 = price2.values
+    for i in range(window - 1, n):
+        y = p1[i - window + 1 : i + 1]
+        x = p2[i - window + 1 : i + 1]
+        x_dm = x - x.mean()
+        denom = float(np.dot(x_dm, x_dm))
+        if denom > 0:
+            vals[i] = float(np.dot(x_dm, y - y.mean()) / denom)
+    return pd.Series(vals, index=price1.index, name="rolling_hedge")
+
+
 def scan_pair(
     price1: pd.Series,
     price2: pd.Series,
@@ -161,6 +182,9 @@ def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) 
     adf = run_adf_test(spread)
     johansen = run_johansen_test(price1, price2)
 
+    rolling_window = max(zscore_window * 3, 90)
+    rolling_hedge = compute_rolling_hedge(price1, price2, rolling_window)
+
     return {
         "hedge_ratio": round(hedge_ratio, 6),
         "adf": adf,
@@ -169,4 +193,6 @@ def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) 
         "spread": _to_json_list(spread),
         "zscore": _to_json_list(zscore),
         "dates": price1.index.strftime("%Y-%m-%d").tolist(),
+        "rolling_hedge": _to_json_list(rolling_hedge),
+        "rolling_hedge_window": rolling_window,
     }

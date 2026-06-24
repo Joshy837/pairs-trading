@@ -6,16 +6,19 @@ Full-stack statistical arbitrage backtester. FastAPI backend + Next.js (App Rout
 
 ```
 backend/   FastAPI (Python)
-  main.py          — two endpoints: POST /api/analyze, POST /api/backtest
+  main.py          — three endpoints: POST /api/analyze, POST /api/backtest, POST /api/scan
   data.py          — yfinance price fetching (free, no API key)
-  cointegration.py — ADF + Johansen tests, hedge ratio, spread, z-score
+  cointegration.py — ADF + Johansen tests, hedge ratio, spread, z-score, half-life
   backtest.py      — backtest engine, Sharpe ratio, max drawdown, equity curve
 
 frontend/  Next.js App Router (TypeScript)
-  app/page.tsx     — single page, all state in useState
-  components/      — CointegrationPanel, SpreadChart, ResultsPanel, EquityCurve,
-                     ParameterControls, TickerInput
-  types/index.ts   — shared types: AnalysisResult, BacktestResult, Parameters, Trade
+  app/page.tsx          — backtester page, all state in useState
+  app/scanner/page.tsx  — multi-ticker pair scanner (matrix + table views)
+  components/           — CointegrationPanel, SpreadChart, ResultsPanel, EquityCurve,
+                          ParameterControls, TickerInput, MultiTickerInput,
+                          PairMatrix, PairTable, Navbar
+  types/index.ts        — shared types: AnalysisResult, BacktestResult, Parameters,
+                          Trade, ScanPairResult, ScanResponse
 ```
 
 ## Running locally
@@ -86,7 +89,32 @@ All frontend styling goes through a unified token set. Before finishing any fron
 
 - Python 3.9 compat: use `from __future__ import annotations` for lowercase generics
 - yfinance returns MultiIndex columns for multi-ticker downloads — access via `raw["Close"]`
-- Spread = price1 − β·price2; β = OLS hedge ratio (in-sample, acceptable for demo)
+- Spread = price1 − β·price2; β = OLS hedge ratio estimated on in-sample window only
 - Rolling z-score window minimum: 10 days; lookback must be ≥ 3× zscore_window
-- Equity curve starts at $100; position lagged 1 day (signal at close T → position at T+1)
+- Equity curve starts at $100 at the out-of-sample start; position lagged 1 day (signal at close T → position at T+1)
+- All backtest metrics (Sharpe, drawdown, total return) are computed on the out-of-sample period only
 - Backend venv is at backend/venv/ — always activate before running pip or uvicorn
+
+## Backtest parameters
+
+| Parameter | Default | Range | Notes |
+|---|---|---|---|
+| `lookback_days` | 365 | 90–1825 | Must be ≥ 3× zscore_window |
+| `zscore_window` | 30 | 10–120 | Rolling window for z-score |
+| `entry_z` | 2.0 | 0.5–4.0 | Triggers a trade |
+| `exit_z` | 0.5 | 0.0–2.0 | Mean-reversion exit; must be < entry_z |
+| `stop_z` | 4.0 | 2.5–6.0 | Stop-loss exit; must be > entry_z |
+| `transaction_cost_bps` | 5 | 0–50 | One-way cost per position change |
+| `insample_pct` | 0.7 | 0.5–0.9 | Fraction used to estimate hedge ratio |
+
+Frontend stores `insample_pct` as an integer (50–90) and divides by 100 before sending to the API.
+
+## Signal logic
+
+1. Compute hedge ratio β on the first `insample_pct` of the price series
+2. Compute spread and rolling z-score over the full series
+3. Generate signals only in the out-of-sample window:
+   - Enter long if z < −entry_z; enter short if z > +entry_z
+   - Exit normally if |z| < exit_z (mean reversion)
+   - Exit via stop-loss if |z| ≥ stop_z (spread diverging); flagged as `stop_triggered=True` in trade log
+4. Transaction cost deducted whenever the held position changes

@@ -100,7 +100,10 @@ export default function Page() {
               ticker1={ticker1}
               ticker2={ticker2}
               loading={loading}
-              onChange={(t1, t2) => { setTicker1(t1); setTicker2(t2); }}
+              onChange={(t1, t2) => {
+                setTicker1(t1);
+                setTicker2(t2);
+              }}
               onSubmit={handleAnalyze}
             />
           </div>
@@ -133,13 +136,17 @@ export default function Page() {
           <div className="rounded-xl border border-dashed border-divider py-14 px-8 text-center">
             <p className="text-sm font-medium text-subtle mb-1">Select a pair to begin</p>
             <p className="text-xs text-muted mb-6 max-w-sm mx-auto">
-              Tests for cointegration, then simulates a z-score mean-reversion strategy over your chosen window.
+              Tests for cointegration, then simulates a z-score mean-reversion strategy over your
+              chosen window.
             </p>
             <div className="flex flex-wrap gap-2 justify-center">
               {PRESET_PAIRS.map(([a, b]) => (
                 <button
                   key={`${a}-${b}`}
-                  onClick={() => { setTicker1(a); setTicker2(b); }}
+                  onClick={() => {
+                    setTicker1(a);
+                    setTicker2(b);
+                  }}
                   className="px-3 py-1.5 text-xs font-mono bg-surface border border-divider rounded-md hover:border-primary hover:text-primary transition-colors"
                 >
                   {a} / {b}
@@ -173,7 +180,9 @@ export default function Page() {
               <div className="space-y-5">
                 <ResultsPanel metrics={backtest.metrics} />
                 <div>
-                  <p className="text-xs font-medium text-muted mb-2">Equity Curve (starts at $100)</p>
+                  <p className="text-xs font-medium text-muted mb-2">
+                    Equity Curve (starts at $100)
+                  </p>
                   <EquityCurve data={backtest} />
                 </div>
               </div>
@@ -197,7 +206,10 @@ export default function Page() {
                     <tbody>
                       {backtest.trades.map((t, i) => {
                         const duration = t.exit_date
-                          ? Math.round((new Date(t.exit_date).getTime() - new Date(t.date).getTime()) / 86400000)
+                          ? Math.round(
+                              (new Date(t.exit_date).getTime() - new Date(t.date).getTime()) /
+                                86400000
+                            )
                           : null;
                         return (
                           <tr key={i} className="border-t border-divider">
@@ -214,7 +226,9 @@ export default function Page() {
                               </span>
                             </td>
                             <td className="py-1.5 pr-4 font-mono text-muted">{t.entry_z}</td>
-                            <td className="py-1.5 pr-4 font-mono text-muted">{t.exit_date ?? "—"}</td>
+                            <td className="py-1.5 pr-4 font-mono text-muted">
+                              {t.exit_date ?? "—"}
+                            </td>
                             <td className="py-1.5 pr-4 font-mono text-muted">{t.exit_z ?? "—"}</td>
                             <td className="py-1.5 font-mono text-muted">
                               {duration !== null ? `${duration}d` : "open"}
@@ -233,4 +247,3 @@ export default function Page() {
     </div>
   );
 }
-

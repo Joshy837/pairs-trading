@@ -17,9 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={mono.variable}>
       <body className="bg-surface min-h-screen font-mono">
-          <Navbar />
-          {children}
-        </body>
+        <Navbar />
+        {children}
+      </body>
     </html>
   );
 }

@@ -14,9 +14,12 @@ function pairKey(t1: string, t2: string): string {
 }
 
 function cellStyle(pvalue: number): string {
-  if (pvalue < 0.01) return "bg-green-900/70 text-green-300 border-green-700/40 cursor-pointer hover:brightness-125";
-  if (pvalue < 0.05) return "bg-green-900/40 text-green-400 border-green-800/30 cursor-pointer hover:brightness-125";
-  if (pvalue < 0.10) return "bg-amber-900/40 text-amber-400 border-amber-800/30 cursor-pointer hover:brightness-125";
+  if (pvalue < 0.01)
+    return "bg-green-900/70 text-green-300 border-green-700/40 cursor-pointer hover:brightness-125";
+  if (pvalue < 0.05)
+    return "bg-green-900/40 text-green-400 border-green-800/30 cursor-pointer hover:brightness-125";
+  if (pvalue < 0.1)
+    return "bg-amber-900/40 text-amber-400 border-amber-800/30 cursor-pointer hover:brightness-125";
   return "bg-panel text-faint border-divider cursor-pointer hover:bg-divider/40";
 }
 
@@ -26,7 +29,8 @@ export default function PairMatrix({ tickers, pairs, selectedKey, onSelect }: Pr
     lookup.set(pairKey(p.ticker1, p.ticker2), p);
   }
 
-  const cellSize = tickers.length <= 6 ? "w-16 h-14" : tickers.length <= 9 ? "w-13 h-11" : "w-11 h-9";
+  const cellSize =
+    tickers.length <= 6 ? "w-16 h-14" : tickers.length <= 9 ? "w-13 h-11" : "w-11 h-9";
   const labelSize = tickers.length <= 6 ? "w-16" : tickers.length <= 9 ? "w-13" : "w-11";
   const textSize = tickers.length <= 9 ? "text-xs" : "text-[10px]";
 

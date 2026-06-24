@@ -13,9 +13,9 @@ const DEFAULT_TICKERS = ["KO", "PEP", "MCD", "YUM"];
 
 const PRESET_GROUPS = [
   { label: "Consumer", tickers: ["KO", "PEP", "MCD", "YUM", "SBUX"] },
-  { label: "Energy",   tickers: ["XOM", "CVX", "COP", "PSX", "VLO"] },
-  { label: "Tech",     tickers: ["AAPL", "MSFT", "GOOGL", "META", "AMZN"] },
-  { label: "Finance",  tickers: ["JPM", "BAC", "GS", "MS", "WFC"] },
+  { label: "Energy", tickers: ["XOM", "CVX", "COP", "PSX", "VLO"] },
+  { label: "Tech", tickers: ["AAPL", "MSFT", "GOOGL", "META", "AMZN"] },
+  { label: "Finance", tickers: ["JPM", "BAC", "GS", "MS", "WFC"] },
 ];
 
 function pairKey(t1: string, t2: string): string {
@@ -63,14 +63,14 @@ export default function ScannerPage() {
     }
   }
 
-  const selectedPair: ScanPairResult | null = selectedKey && result
-    ? result.pairs.find((p) => pairKey(p.ticker1, p.ticker2) === selectedKey) ?? null
-    : null;
+  const selectedPair: ScanPairResult | null =
+    selectedKey && result
+      ? (result.pairs.find((p) => pairKey(p.ticker1, p.ticker2) === selectedKey) ?? null)
+      : null;
 
   return (
     <div className="min-h-screen bg-surface">
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
-
         {/* Control panel */}
         <Card>
           <div className="space-y-4">
@@ -151,7 +151,8 @@ export default function ScannerPage() {
           <div className="rounded-xl border border-dashed border-divider py-14 px-8 text-center">
             <p className="text-sm font-medium text-subtle mb-1">Add tickers and scan</p>
             <p className="text-xs text-muted max-w-sm mx-auto">
-              Tests all pair combinations for cointegration. Click a result to open it in the backtester.
+              Tests all pair combinations for cointegration. Click a result to open it in the
+              backtester.
             </p>
           </div>
         )}
@@ -159,7 +160,6 @@ export default function ScannerPage() {
         {/* Results */}
         {result && !loading && (
           <div className="space-y-5">
-
             {/* Selected pair detail */}
             {selectedPair && (
               <div className="bg-panel rounded-xl border border-primary/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -169,15 +169,23 @@ export default function ScannerPage() {
                     <span className="text-faint font-normal mx-1.5">/</span>
                     {selectedPair.ticker2}
                   </span>
-                  <span className={`text-xs font-mono px-2 py-0.5 rounded ${selectedPair.pvalue < 0.05 ? "bg-green-900/50 text-green-300" : "bg-amber-900/50 text-amber-300"}`}>
+                  <span
+                    className={`text-xs font-mono px-2 py-0.5 rounded ${selectedPair.pvalue < 0.05 ? "bg-green-900/50 text-green-300" : "bg-amber-900/50 text-amber-300"}`}
+                  >
                     p = {selectedPair.pvalue.toFixed(4)}
                   </span>
-                  <span className="text-xs text-muted font-mono">β = {selectedPair.hedge_ratio.toFixed(4)}</span>
+                  <span className="text-xs text-muted font-mono">
+                    β = {selectedPair.hedge_ratio.toFixed(4)}
+                  </span>
                   {selectedPair.zscore !== null && (
-                    <span className="text-xs text-muted font-mono">z = {selectedPair.zscore.toFixed(3)}</span>
+                    <span className="text-xs text-muted font-mono">
+                      z = {selectedPair.zscore.toFixed(3)}
+                    </span>
                   )}
                   {selectedPair.half_life !== null && (
-                    <span className="text-xs text-muted font-mono">HL = {selectedPair.half_life}d</span>
+                    <span className="text-xs text-muted font-mono">
+                      HL = {selectedPair.half_life}d
+                    </span>
                   )}
                 </div>
                 <Link
@@ -193,7 +201,8 @@ export default function ScannerPage() {
             <Card>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-subtle">
-                  {result.pairs.length} pairs · {result.pairs.filter((p) => p.is_cointegrated).length} cointegrated
+                  {result.pairs.length} pairs ·{" "}
+                  {result.pairs.filter((p) => p.is_cointegrated).length} cointegrated
                 </h2>
                 <div className="flex gap-1 bg-surface rounded-md p-0.5">
                   {(["matrix", "table"] as const).map((v) => (

@@ -18,11 +18,7 @@ function MetricBox({
   positive?: boolean;
 }) {
   const color =
-    positive === undefined
-      ? "text-subtle"
-      : positive
-      ? "text-green-400"
-      : "text-red-400";
+    positive === undefined ? "text-subtle" : positive ? "text-green-400" : "text-red-400";
 
   return (
     <div className="bg-surface rounded-lg p-4 text-center">
@@ -46,21 +42,9 @@ export default function ResultsPanel({ metrics }: Props) {
         sub="annualised"
         positive={sharpe_ratio > 0}
       />
-      <MetricBox
-        label="Max Drawdown"
-        value={fmtPct(max_drawdown)}
-        positive={max_drawdown > -0.1}
-      />
-      <MetricBox
-        label="Total Return"
-        value={fmtPct(total_return)}
-        positive={total_return > 0}
-      />
-      <MetricBox
-        label="# Trades"
-        value={String(num_trades)}
-        sub="round trips"
-      />
+      <MetricBox label="Max Drawdown" value={fmtPct(max_drawdown)} positive={max_drawdown > -0.1} />
+      <MetricBox label="Total Return" value={fmtPct(total_return)} positive={total_return > 0} />
+      <MetricBox label="# Trades" value={String(num_trades)} sub="round trips" />
     </div>
   );
 }

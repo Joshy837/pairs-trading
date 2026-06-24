@@ -37,12 +37,12 @@ export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
       {/* Verdict */}
       <div
         className={`rounded-lg p-4 text-center ${
-          is_cointegrated ? "bg-green-500/10 border border-green-500/20" : "bg-red-500/10 border border-red-500/20"
+          is_cointegrated
+            ? "bg-green-500/10 border border-green-500/20"
+            : "bg-red-500/10 border border-red-500/20"
         }`}
       >
-        <div
-          className={`text-lg font-bold ${is_cointegrated ? "text-green-400" : "text-red-400"}`}
-        >
+        <div className={`text-lg font-bold ${is_cointegrated ? "text-green-400" : "text-red-400"}`}>
           {is_cointegrated ? "Cointegrated" : "Not Cointegrated"}
         </div>
         <div className="text-xs text-muted mt-0.5">
@@ -78,11 +78,7 @@ export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
               <Row
                 label="Result"
                 value={
-                  <Badge
-                    ok={johansen.is_cointegrated}
-                    yes="Cointegrated"
-                    no="No cointegration"
-                  />
+                  <Badge ok={johansen.is_cointegrated} yes="Cointegrated" no="No cointegration" />
                 }
               />
             </tbody>

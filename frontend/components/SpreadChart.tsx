@@ -78,10 +78,30 @@ export default function SpreadChart({ data, entryZ, exitZ, ticker1, ticker2 }: P
               contentStyle={{ fontSize: CHART_AXIS.fontSize }}
             />
             <ReferenceLine y={0} stroke={CHART_COLORS.zero} />
-            <ReferenceLine y={entryZ} stroke={CHART_COLORS.entry} strokeDasharray="5 3" strokeWidth={1.5} />
-            <ReferenceLine y={-entryZ} stroke={CHART_COLORS.entry} strokeDasharray="5 3" strokeWidth={1.5} />
-            <ReferenceLine y={exitZ} stroke={CHART_COLORS.exit} strokeDasharray="4 3" strokeWidth={1} />
-            <ReferenceLine y={-exitZ} stroke={CHART_COLORS.exit} strokeDasharray="4 3" strokeWidth={1} />
+            <ReferenceLine
+              y={entryZ}
+              stroke={CHART_COLORS.entry}
+              strokeDasharray="5 3"
+              strokeWidth={1.5}
+            />
+            <ReferenceLine
+              y={-entryZ}
+              stroke={CHART_COLORS.entry}
+              strokeDasharray="5 3"
+              strokeWidth={1.5}
+            />
+            <ReferenceLine
+              y={exitZ}
+              stroke={CHART_COLORS.exit}
+              strokeDasharray="4 3"
+              strokeWidth={1}
+            />
+            <ReferenceLine
+              y={-exitZ}
+              stroke={CHART_COLORS.exit}
+              strokeDasharray="4 3"
+              strokeWidth={1}
+            />
             <Line
               type="monotone"
               dataKey="zscore"

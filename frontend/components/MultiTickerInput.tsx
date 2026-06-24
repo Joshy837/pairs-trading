@@ -15,7 +15,10 @@ export default function MultiTickerInput({ tickers, loading, onChange, onSubmit 
   const [input, setInput] = useState("");
 
   function add(raw: string) {
-    const val = raw.trim().toUpperCase().replace(/[^A-Z.]/g, "");
+    const val = raw
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z.]/g, "");
     if (!val || tickers.includes(val) || tickers.length >= MAX_TICKERS) return;
     onChange([...tickers, val]);
     setInput("");
@@ -61,7 +64,9 @@ export default function MultiTickerInput({ tickers, loading, onChange, onSubmit 
               value={input}
               onChange={(e) => setInput(e.target.value.toUpperCase())}
               onKeyDown={onKeyDown}
-              onBlur={() => { if (input) add(input); }}
+              onBlur={() => {
+                if (input) add(input);
+              }}
               placeholder={tickers.length === 0 ? "Type ticker and press Enter…" : ""}
               maxLength={10}
               className="flex-1 min-w-[140px] bg-transparent text-subtle text-xs font-mono uppercase tracking-widest placeholder:text-faint outline-none py-0.5"

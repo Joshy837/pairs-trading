@@ -19,7 +19,7 @@ function pairKey(t1: string, t2: string): string {
 function pvalueBadge(pvalue: number): string {
   if (pvalue < 0.01) return "bg-green-900/70 text-green-300";
   if (pvalue < 0.05) return "bg-green-900/40 text-green-400";
-  if (pvalue < 0.10) return "bg-amber-900/40 text-amber-400";
+  if (pvalue < 0.1) return "bg-amber-900/40 text-amber-400";
   return "bg-panel text-faint border border-divider";
 }
 
@@ -44,10 +44,13 @@ export default function PairTable({ pairs, selectedKey, onSelect }: Props) {
   const sorted = [...pairs].sort((a, b) => {
     const aVal = a[sortKey] ?? Infinity;
     const bVal = b[sortKey] ?? Infinity;
-    return sortDir === "asc" ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
+    return sortDir === "asc"
+      ? (aVal as number) - (bVal as number)
+      : (bVal as number) - (aVal as number);
   });
 
-  const thCls = "pb-2 pr-4 font-medium text-left select-none cursor-pointer hover:text-subtle transition-colors whitespace-nowrap";
+  const thCls =
+    "pb-2 pr-4 font-medium text-left select-none cursor-pointer hover:text-subtle transition-colors whitespace-nowrap";
 
   return (
     <div className="overflow-x-auto">

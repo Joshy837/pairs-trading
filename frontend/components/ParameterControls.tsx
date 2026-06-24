@@ -63,16 +63,21 @@ function SliderField({ label, value, min, max, step, unit, onChange }: SliderFie
         className="w-full accent-primary"
       />
       <div className="flex justify-between text-xs text-faint mt-0.5">
-        <span>{min}{unit}</span>
-        <span>{max}{unit}</span>
+        <span>
+          {min}
+          {unit}
+        </span>
+        <span>
+          {max}
+          {unit}
+        </span>
       </div>
     </div>
   );
 }
 
 export default function ParameterControls({ params, onChange }: Props) {
-  const set = (key: keyof Parameters) => (v: number) =>
-    onChange({ ...params, [key]: v });
+  const set = (key: keyof Parameters) => (v: number) => onChange({ ...params, [key]: v });
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

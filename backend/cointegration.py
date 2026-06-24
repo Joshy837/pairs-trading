@@ -1,0 +1,119 @@
+"""
+Cointegration tests and spread calculations for pairs trading.
+
+Theory:
+  Two price series P1 and P2 are cointegrated if there exists a linear combination
+  P1 - β·P2 (the "spread") that is stationary (mean-reverting).
+  β is the hedge ratio estimated via OLS.
+
+  We test stationarity with:
+    ADF test  — unit-root test on the spread itself (Engle-Granger method)
+    Johansen  — system-level test that doesn't require pre-specifying which is the
+                 dependent variable; tests for rank of the cointegration space
+"""
+import math
+
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.vector_ar.vecm import coint_johansen
+
+
+def _to_json_list(s: pd.Series) -> list:
+    """Convert a Series to a JSON-safe list, mapping NaN → None."""
+    return [None if math.isnan(x) else float(x) for x in s]
+
+
+def compute_hedge_ratio(price1: pd.Series, price2: pd.Series) -> float:
+    """
+    OLS hedge ratio β such that price1 ≈ α + β·price2.
+
+    We regress price1 on price2 (with intercept) and take the slope.
+    This minimises the variance of the spread and is the standard
+    Engle-Granger first-step estimator.
+    """
+    X = sm.add_constant(price2.values)
+    model = sm.OLS(price1.values, X).fit()
+    return float(model.params[1])
+
+
+def compute_spread(price1: pd.Series, price2: pd.Series, hedge_ratio: float) -> pd.Series:
+    """Spread = price1 − β·price2.  Mean-reverts if the pair is cointegrated."""
+    return (price1 - hedge_ratio * price2).rename("spread")
+
+
+def compute_zscore(spread: pd.Series, window: int) -> pd.Series:
+    """
+    Rolling z-score: z_t = (spread_t − μ_t) / σ_t
+    where μ_t and σ_t are the rolling mean and std over `window` days.
+
+    First `window - 1` values are NaN (insufficient history).
+    """
+    mu = spread.rolling(window=window).mean()
+    sigma = spread.rolling(window=window).std()
+    return ((spread - mu) / sigma).rename("zscore")
+
+
+def run_adf_test(spread: pd.Series) -> dict:
+    """
+    Augmented Dickey-Fuller test on the spread.
+
+    H₀: spread has a unit root (non-stationary → NOT cointegrated).
+    Reject H₀ at p < 0.05 → spread is stationary → pair IS cointegrated.
+    """
+    stat, pvalue, _, _, crit, _ = adfuller(spread.dropna(), autolag="AIC")
+    return {
+        "test_statistic": float(stat),
+        "p_value": float(pvalue),
+        "critical_values": {k: float(v) for k, v in crit.items()},
+        "is_stationary": bool(pvalue < 0.05),
+    }
+
+
+def run_johansen_test(price1: pd.Series, price2: pd.Series) -> dict:
+    """
+    Johansen trace test for cointegration between two price series.
+
+    Tests H₀: cointegration rank = 0 (no cointegration).
+    Reject H₀ if trace statistic > 95% critical value → cointegrated.
+
+    Unlike ADF, Johansen doesn't assume which series is the 'dependent' one.
+    """
+    data = np.column_stack([price1.values, price2.values])
+    result = coint_johansen(data, det_order=0, k_ar_diff=1)
+
+    # lr1[0] = trace stat for rank-0 hypothesis; cvt[0,1] = 95% critical value
+    trace_stat = float(result.lr1[0])
+    crit_95 = float(result.cvt[0, 1])
+
+    return {
+        "trace_statistic": trace_stat,
+        "critical_value_95": crit_95,
+        "is_cointegrated": bool(trace_stat > crit_95),
+    }
+
+
+def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) -> dict:
+    """
+    Run full cointegration analysis and return all data needed by the frontend.
+
+    Returns hedge ratio, ADF/Johansen results, and the spread + z-score time series.
+    A pair is flagged as cointegrated if *either* test rejects the null.
+    """
+    hedge_ratio = compute_hedge_ratio(price1, price2)
+    spread = compute_spread(price1, price2, hedge_ratio)
+    zscore = compute_zscore(spread, zscore_window)
+
+    adf = run_adf_test(spread)
+    johansen = run_johansen_test(price1, price2)
+
+    return {
+        "hedge_ratio": round(hedge_ratio, 6),
+        "adf": adf,
+        "johansen": johansen,
+        "is_cointegrated": adf["is_stationary"] or johansen["is_cointegrated"],
+        "spread": _to_json_list(spread),
+        "zscore": _to_json_list(zscore),
+        "dates": price1.index.strftime("%Y-%m-%d").tolist(),
+    }

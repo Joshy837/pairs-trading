@@ -1,11 +1,15 @@
 """FastAPI application — pairs trading analysis and backtesting endpoints."""
+from __future__ import annotations
+
+from itertools import combinations
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
-from cointegration import analyze_pair
-from data import fetch_prices
+from cointegration import analyze_pair, scan_pair
+from data import fetch_prices, fetch_prices_batch
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
 
@@ -45,6 +49,24 @@ class BacktestRequest(AnalyzeRequest):
         return self
 
 
+class ScanRequest(BaseModel):
+    tickers: list[str] = Field(..., min_length=2, max_length=12)
+    lookback_days: int = Field(default=365, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "ScanRequest":
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        upper = [t.upper() for t in self.tickers]
+        if len(set(upper)) != len(upper):
+            raise ValueError("Duplicate tickers in list.")
+        return self
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -64,6 +86,34 @@ def analyze(req: AnalyzeRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+
+
+@app.post("/api/scan")
+def scan(req: ScanRequest) -> dict:
+    """
+    Run cointegration scan over all N(N-1)/2 pairs from the provided ticker list.
+
+    Fetches prices in a single batch call, then runs ADF on each combination.
+    Returns results sorted by p-value (most cointegrated first).
+    """
+    try:
+        prices = fetch_prices_batch(req.tickers, req.lookback_days)
+        available = list(prices.columns)
+
+        results = []
+        for t1, t2 in combinations(available, 2):
+            try:
+                result = scan_pair(prices[t1], prices[t2], t1, t2, req.zscore_window)
+                results.append(result)
+            except Exception:
+                pass  # skip pairs that fail (insufficient variance, etc.)
+
+        results.sort(key=lambda x: x["pvalue"])
+        return {"pairs": results, "tickers": available}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Scan failed: {exc}")
 
 
 @app.post("/api/backtest")

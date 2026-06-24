@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import CointegrationPanel from "@/components/CointegrationPanel";
 import EquityCurve from "@/components/EquityCurve";
 import ParameterControls from "@/components/ParameterControls";
@@ -37,6 +37,14 @@ function Card({ title, children }: { title?: string; children: React.ReactNode }
 export default function Page() {
   const [ticker1, setTicker1] = useState("KO");
   const [ticker2, setTicker2] = useState("PEP");
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const t1 = p.get("t1");
+    const t2 = p.get("t2");
+    if (t1) setTicker1(t1.toUpperCase());
+    if (t2) setTicker2(t2.toUpperCase());
+  }, []);
   const [params, setParams] = useState<Parameters>(DEFAULT_PARAMS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,21 +92,6 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Dark header */}
-      <header className="bg-ink border-b border-divider">
-        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-sm font-semibold text-subtle tracking-tight">Pairs Trading</h1>
-            <p className="text-xs text-muted mt-0.5">Statistical arbitrage backtester</p>
-          </div>
-          {analysis && (
-            <span className="text-xs font-mono text-muted">
-              {ticker1} <span className="text-faint">vs</span> {ticker2}
-            </span>
-          )}
-        </div>
-      </header>
-
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
         {/* Merged control panel */}
         <div className="bg-panel rounded-xl shadow-sm border border-divider overflow-hidden">
@@ -240,3 +233,4 @@ export default function Page() {
     </div>
   );
 }
+

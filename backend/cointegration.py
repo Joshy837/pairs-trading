@@ -94,6 +94,59 @@ def run_johansen_test(price1: pd.Series, price2: pd.Series) -> dict:
     }
 
 
+def compute_half_life(spread: pd.Series) -> "float | None":
+    """
+    Half-life of mean reversion in trading days.
+
+    Fits Δspread_t = α + γ·spread_{t-1} and solves -ln(2)/ln(1+γ).
+    Returns None if γ ≥ 0 (spread not mean-reverting) or OLS fails.
+    """
+    lag = spread.shift(1)
+    delta = spread.diff()
+    df = pd.concat([lag, delta], axis=1).dropna()
+    df.columns = ["lag", "delta"]
+    X = sm.add_constant(df["lag"].values)
+    model = sm.OLS(df["delta"].values, X).fit()
+    gamma = float(model.params[1])
+    if gamma >= 0:
+        return None
+    return float(-math.log(2) / math.log(1 + gamma))
+
+
+def scan_pair(
+    price1: pd.Series,
+    price2: pd.Series,
+    ticker1: str,
+    ticker2: str,
+    zscore_window: int = 30,
+) -> dict:
+    """
+    Lightweight cointegration scan for one pair — ADF only (no Johansen) for speed.
+
+    Returns the key metrics needed by the scanner: p-value, hedge ratio,
+    current z-score, and half-life of mean reversion.
+    """
+    hedge_ratio = compute_hedge_ratio(price1, price2)
+    spread = compute_spread(price1, price2, hedge_ratio)
+    zscore = compute_zscore(spread, zscore_window)
+
+    adf = run_adf_test(spread)
+    half_life = compute_half_life(spread)
+
+    valid_z = zscore.dropna()
+    current_z = float(valid_z.iloc[-1]) if not valid_z.empty else None
+
+    return {
+        "ticker1": ticker1,
+        "ticker2": ticker2,
+        "pvalue": round(adf["p_value"], 4),
+        "hedge_ratio": round(hedge_ratio, 4),
+        "zscore": round(current_z, 3) if current_z is not None else None,
+        "half_life": round(half_life, 1) if half_life is not None else None,
+        "is_cointegrated": adf["is_stationary"],
+    }
+
+
 def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) -> dict:
     """
     Run full cointegration analysis and return all data needed by the frontend.

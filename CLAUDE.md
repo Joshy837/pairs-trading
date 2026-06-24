@@ -44,28 +44,39 @@ This project is a git repository. Use standard git workflows for commits and pus
 
 ## Design system
 
-All frontend styling goes through a unified token set — never use raw Tailwind gray/indigo color classes directly.
+**This is a hard constraint. Every frontend file you write or edit must comply before you consider the task done.**
+
+All frontend styling goes through a unified token set. Before finishing any frontend change, scan the touched files for violations and fix them in the same pass.
 
 **Files:**
 - `frontend/tailwind.config.js` — semantic color tokens (source of truth)
 - `frontend/app/globals.css` — `@layer components` with `.label` and `.section-heading`
 - `frontend/lib/tokens.ts` — `CHART_COLORS` and `CHART_AXIS` constants for Recharts
 
-**Color tokens** (use these, not raw Tailwind palette names):
+**Color tokens — always use these, never the raw Tailwind equivalents:**
 
-| Token | Meaning | Tailwind equivalent |
+| Token | Meaning | Raw equivalent (FORBIDDEN) |
 |---|---|---|
-| `primary` / `primary-dark` | Brand CTA (buttons, focus rings, sliders) | indigo-600 / indigo-700 |
-| `surface` | Page bg, metric tile bg | gray-50 |
-| `panel` | Card bg | white |
-| `divider` | Card/table borders | gray-100 |
-| `subtle` | Card titles, section headings | gray-700 |
-| `muted` | Labels, chart axis text | gray-500 |
-| `faint` | Hints, range ends, placeholder text | gray-400 |
+| `primary` / `primary-dark` | Brand CTA (buttons, focus rings, sliders) | indigo-* |
+| `surface` | Page bg, metric tile bg | gray-900 |
+| `panel` | Card bg | gray-800 |
+| `divider` | Card/table borders | gray-700 |
+| `ink` | Header/navbar bg | (near-black) |
+| `subtle` | Card titles, headings, primary text | gray-50 |
+| `muted` | Labels, chart axis text | gray-400 |
+| `faint` | Hints, placeholders, secondary text | gray-500 |
 
-Status colors (green/red/amber) stay as Tailwind built-ins — they are already semantic and only used inside self-contained status components (Badge, verdict panel, warning callout).
+**Forbidden patterns — never write these in any `.tsx`, `.ts`, or `.css` file:**
+- Any `gray-*` Tailwind class: `text-gray-*`, `bg-gray-*`, `border-gray-*`, `ring-gray-*`, etc.
+- Any `indigo-*` Tailwind class: `text-indigo-*`, `bg-indigo-*`, `border-indigo-*`, etc.
+- Raw `text-white` — use `text-subtle` instead (same visual result, stays in token system)
+- Hardcoded hex color strings anywhere in component files
 
-**Component classes:**
+**Allowed exceptions:**
+- `green-*`, `red-*`, `amber-*` — status/signal colors only, inside self-contained status components (badges, verdict panels, error callouts). Never for layout or neutral UI.
+- Opacity modifiers on tokens are fine: `bg-primary/20`, `bg-divider/40`, etc.
+
+**Component classes — use these instead of repeating the utility string:**
 - `.label` — form field labels: `text-xs font-medium text-muted uppercase tracking-wide`
 - `.section-heading` — card sub-sections: `text-xs font-semibold text-subtle uppercase tracking-wide`
 

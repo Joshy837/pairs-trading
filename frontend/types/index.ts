@@ -52,3 +52,18 @@ export interface Parameters {
   entry_z: number;
   exit_z: number;
 }
+
+export interface ScanPairResult {
+  ticker1: string;
+  ticker2: string;
+  pvalue: number;
+  hedge_ratio: number;
+  zscore: number | null;
+  half_life: number | null;
+  is_cointegrated: boolean;
+}
+
+export interface ScanResponse {
+  pairs: ScanPairResult[];
+  tickers: string[];
+}

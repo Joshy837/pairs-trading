@@ -54,3 +54,49 @@ def fetch_prices(ticker1: str, ticker2: str, lookback_days: int) -> tuple[pd.Ser
         )
 
     return prices[t1], prices[t2]
+
+
+def fetch_prices_batch(tickers: list, lookback_days: int) -> "pd.DataFrame":
+    """
+    Download adjusted close prices for multiple tickers over a lookback window.
+
+    Returns a DataFrame with tickers as columns, date index, NaN rows dropped.
+    Tickers that yfinance cannot resolve are silently excluded — callers should
+    check the returned columns against the requested list.
+
+    Raises ValueError if fewer than 2 valid tickers remain or history is too short.
+    """
+    tickers_upper = [t.upper() for t in tickers]
+
+    end = datetime.today()
+    start = end - timedelta(days=lookback_days)
+
+    raw = yf.download(
+        tickers_upper,
+        start=start.strftime("%Y-%m-%d"),
+        end=end.strftime("%Y-%m-%d"),
+        auto_adjust=True,
+        progress=False,
+    )
+
+    if raw.empty:
+        raise ValueError("No data returned. Check that the ticker symbols are valid.")
+
+    if isinstance(raw.columns, pd.MultiIndex):
+        prices = raw["Close"]
+    else:
+        raise ValueError("Unexpected data format from yfinance.")
+
+    available = [t for t in tickers_upper if t in prices.columns]
+    if len(available) < 2:
+        raise ValueError("Fewer than 2 valid tickers found. Check your symbols and try again.")
+
+    prices = prices[available].dropna()
+
+    if len(prices) < 60:
+        raise ValueError(
+            f"Only {len(prices)} trading days available after alignment. "
+            "Use a larger lookback window or choose tickers with more history."
+        )
+
+    return prices

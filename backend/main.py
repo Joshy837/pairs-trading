@@ -1,10 +1,12 @@
 """FastAPI application — pairs trading analysis and backtesting endpoints."""
 from __future__ import annotations
 
+import json as _json
 from itertools import combinations
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
@@ -61,6 +63,7 @@ class ScanRequest(BaseModel):
     lookback_days: int = Field(default=365, ge=90, le=1825)
     zscore_window: int = Field(default=30, ge=10, le=120)
     sector_filter: bool = Field(default=False)
+    corr_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def check_valid(self) -> "ScanRequest":
@@ -151,6 +154,95 @@ def scan(req: ScanRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Scan failed: {exc}")
+
+
+@app.post("/api/scan/stream")
+def scan_stream(req: ScanRequest) -> StreamingResponse:
+    """
+    SSE stream of the pair scanning pipeline.
+
+    Events (JSON in data: field):
+      fetching        — {tickers}
+      corr_result     — {ticker1, ticker2, corr, passed}  (one per pair)
+      correlation_done— {total, passed}
+      coint_result    — {ticker1, ticker2, pvalue, is_cointegrated}  (one per filtered pair)
+      bh_correction   — (no payload)
+      complete        — {pairs, tickers, sectors, significant}
+      error           — {message}
+    """
+    from statsmodels.stats.multitest import multipletests
+
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def generate():
+        try:
+            yield _event({"type": "fetching", "tickers": req.tickers})
+
+            prices = fetch_prices_batch(req.tickers, req.lookback_days)
+            available = list(prices.columns)
+
+            sectors: dict = {}
+            if req.sector_filter:
+                sectors = fetch_sectors(available)
+
+            all_pairs = []
+            for t1, t2 in combinations(available, 2):
+                if req.sector_filter:
+                    s1, s2 = sectors.get(t1), sectors.get(t2)
+                    if s1 is not None and s2 is not None and s1 != s2:
+                        continue
+                all_pairs.append((t1, t2))
+
+            returns = prices.pct_change().dropna()
+            filtered: list[tuple[str, str, float]] = []
+            for t1, t2 in all_pairs:
+                corr = float(abs(returns[t1].corr(returns[t2])))
+                passed = corr >= req.corr_threshold
+                yield _event({"type": "corr_result", "ticker1": t1, "ticker2": t2, "corr": round(corr, 4), "passed": passed})
+                if passed:
+                    filtered.append((t1, t2, corr))
+
+            yield _event({"type": "correlation_done", "total": len(all_pairs), "passed": len(filtered)})
+
+            results = []
+            for t1, t2, corr in filtered:
+                try:
+                    result = scan_pair(prices[t1], prices[t2], t1, t2, req.zscore_window)
+                    result["correlation"] = round(corr, 4)
+                    results.append(result)
+                    yield _event({"type": "coint_result", "ticker1": t1, "ticker2": t2, "pvalue": result["pvalue"], "is_cointegrated": result["is_cointegrated"]})
+                except Exception:
+                    yield _event({"type": "coint_result", "ticker1": t1, "ticker2": t2, "pvalue": None, "is_cointegrated": False})
+
+            yield _event({"type": "bh_correction"})
+
+            if len(results) > 1:
+                pvalues = [r["pvalue"] for r in results]
+                _, adj_pvalues, _, _ = multipletests(pvalues, alpha=0.1, method="fdr_bh")
+                for r, adj_p in zip(results, adj_pvalues):
+                    r["adjusted_pvalue"] = round(float(adj_p), 4)
+                    r["bh_significant"] = bool(adj_p < 0.1)
+            else:
+                for r in results:
+                    r["adjusted_pvalue"] = r["pvalue"]
+                    r["bh_significant"] = bool(r["pvalue"] < 0.1)
+
+            results.sort(key=lambda x: x["pvalue"])
+            significant = sum(1 for r in results if r.get("bh_significant"))
+
+            yield _event({"type": "complete", "pairs": results, "tickers": available, "sectors": sectors, "significant": significant})
+
+        except ValueError as exc:
+            yield _event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            yield _event({"type": "error", "message": f"Scan failed: {exc}"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/backtest")

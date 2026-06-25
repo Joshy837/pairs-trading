@@ -78,6 +78,13 @@ export interface ScanPairResult {
   stability_pvalue_h1: number | null;
   stability_pvalue_h2: number | null;
   is_stable: boolean | null;
+  correlation?: number;
+}
+
+export interface LogEntry {
+  kind: "info" | "header" | "pass" | "fail" | "summary";
+  text: string;
+  detail?: string;
 }
 
 export interface ScanResponse {

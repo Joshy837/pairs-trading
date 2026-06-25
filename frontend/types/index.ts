@@ -69,13 +69,19 @@ export interface ScanPairResult {
   ticker1: string;
   ticker2: string;
   pvalue: number;
+  adjusted_pvalue: number;
+  bh_significant: boolean;
   hedge_ratio: number;
   zscore: number | null;
   half_life: number | null;
   is_cointegrated: boolean;
+  stability_pvalue_h1: number | null;
+  stability_pvalue_h2: number | null;
+  is_stable: boolean | null;
 }
 
 export interface ScanResponse {
   pairs: ScanPairResult[];
   tickers: string[];
+  sectors: Record<string, string | null>;
 }

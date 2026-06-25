@@ -173,6 +173,35 @@ def compute_rolling_hedge(price1: pd.Series, price2: pd.Series, window: int) -> 
     return pd.Series(vals, index=price1.index, name="rolling_hedge")
 
 
+def _stability_test(price1: pd.Series, price2: pd.Series) -> dict:
+    """
+    Test cointegration stability by re-running ADF on the first and second halves.
+
+    A real cointegrating relationship should be detectable in sub-periods.
+    Uses p < 0.10 per half (lenient vs full-sample 0.05) because each half
+    has fewer observations and therefore less statistical power.
+
+    Returns None values when either half is too short for a meaningful test.
+    """
+    mid = len(price1) // 2
+    if mid < 30:
+        return {"pvalue_h1": None, "pvalue_h2": None, "is_stable": None}
+
+    hr1 = compute_hedge_ratio(price1.iloc[:mid], price2.iloc[:mid])
+    spread1 = compute_spread(price1.iloc[:mid], price2.iloc[:mid], hr1)
+    p1 = run_adf_test(spread1)["p_value"]
+
+    hr2 = compute_hedge_ratio(price1.iloc[mid:], price2.iloc[mid:])
+    spread2 = compute_spread(price1.iloc[mid:], price2.iloc[mid:], hr2)
+    p2 = run_adf_test(spread2)["p_value"]
+
+    return {
+        "pvalue_h1": round(p1, 4),
+        "pvalue_h2": round(p2, 4),
+        "is_stable": bool(p1 < 0.10 and p2 < 0.10),
+    }
+
+
 def scan_pair(
     price1: pd.Series,
     price2: pd.Series,
@@ -184,7 +213,7 @@ def scan_pair(
     Lightweight cointegration scan for one pair — ADF only (no Johansen) for speed.
 
     Returns the key metrics needed by the scanner: p-value, hedge ratio,
-    current z-score, and half-life of mean reversion.
+    current z-score, half-life of mean reversion, and stability across sub-periods.
     """
     hedge_ratio = compute_hedge_ratio(price1, price2)
     spread = compute_spread(price1, price2, hedge_ratio)
@@ -192,6 +221,7 @@ def scan_pair(
 
     adf = run_adf_test(spread)
     half_life = compute_half_life(spread)
+    stability = _stability_test(price1, price2)
 
     valid_z = zscore.dropna()
     current_z = float(valid_z.iloc[-1]) if not valid_z.empty else None
@@ -204,6 +234,9 @@ def scan_pair(
         "zscore": round(current_z, 3) if current_z is not None else None,
         "half_life": round(half_life, 1) if half_life is not None else None,
         "is_cointegrated": adf["is_stationary"],
+        "stability_pvalue_h1": stability["pvalue_h1"],
+        "stability_pvalue_h2": stability["pvalue_h2"],
+        "is_stable": stability["is_stable"],
     }
 
 

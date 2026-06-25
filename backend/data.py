@@ -1,6 +1,8 @@
 """Data fetching utilities using yfinance (free, no API key required)."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
@@ -100,3 +102,28 @@ def fetch_prices_batch(tickers: list, lookback_days: int) -> "pd.DataFrame":
         )
 
     return prices
+
+
+def fetch_sectors(tickers: list[str]) -> "dict[str, str | None]":
+    """
+    Fetch GICS sector for each ticker using yfinance.
+
+    Requests run in parallel (I/O bound). Returns None for any ticker
+    where sector information is unavailable or the request fails.
+    """
+    def _get(ticker: str) -> "tuple[str, str | None]":
+        try:
+            return ticker, yf.Ticker(ticker).info.get("sector")
+        except Exception:
+            return ticker, None
+
+    sectors: dict[str, str | None] = {}
+    with ThreadPoolExecutor(max_workers=min(len(tickers), 10)) as pool:
+        futures = {pool.submit(_get, t): t for t in tickers}
+        for future in as_completed(futures, timeout=20):
+            try:
+                t, sector = future.result()
+                sectors[t] = sector
+            except Exception:
+                sectors[futures[future]] = None
+    return sectors

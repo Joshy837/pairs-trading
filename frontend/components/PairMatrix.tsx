@@ -5,6 +5,7 @@ import { ScanPairResult } from "@/types";
 interface Props {
   tickers: string[];
   pairs: ScanPairResult[];
+  filteredKeys?: Set<string>;
   selectedKey: string | null;
   onSelect: (key: string) => void;
 }
@@ -23,7 +24,7 @@ function cellStyle(pvalue: number): string {
   return "bg-panel text-faint border-divider cursor-pointer hover:bg-divider/40";
 }
 
-export default function PairMatrix({ tickers, pairs, selectedKey, onSelect }: Props) {
+export default function PairMatrix({ tickers, pairs, filteredKeys, selectedKey, onSelect }: Props) {
   const lookup = new Map<string, ScanPairResult>();
   for (const p of pairs) {
     lookup.set(pairKey(p.ticker1, p.ticker2), p);
@@ -80,12 +81,13 @@ export default function PairMatrix({ tickers, pairs, selectedKey, onSelect }: Pr
               }
 
               const isSelected = selectedKey === key;
+              const isFiltered = filteredKeys !== undefined && !filteredKeys.has(key);
 
               return (
                 <div
                   key={colTicker}
                   onClick={() => onSelect(key)}
-                  className={`${cellSize} flex-shrink-0 border m-px rounded-sm flex flex-col items-center justify-center transition-all ${cellStyle(pair.pvalue)} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface" : ""}`}
+                  className={`${cellSize} flex-shrink-0 border m-px rounded-sm flex flex-col items-center justify-center transition-all ${cellStyle(pair.pvalue)} ${isSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-surface" : ""} ${isFiltered ? "opacity-20" : ""}`}
                 >
                   <span className={`${textSize} font-mono leading-tight`}>
                     {pair.pvalue.toFixed(3)}

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ScanPairResult } from "@/types";
 
-type SortKey = "pvalue" | "hedge_ratio" | "zscore" | "half_life";
+type SortKey = "pvalue" | "adjusted_pvalue" | "hedge_ratio" | "zscore" | "half_life";
 type SortDir = "asc" | "desc";
 
 interface Props {
@@ -61,6 +61,10 @@ export default function PairTable({ pairs, selectedKey, onSelect }: Props) {
             <th className={thCls} onClick={() => toggleSort("pvalue")}>
               P-Value <SortIcon col="pvalue" sortKey={sortKey} dir={sortDir} />
             </th>
+            <th className={thCls} onClick={() => toggleSort("adjusted_pvalue")}>
+              Adj P (BH) <SortIcon col="adjusted_pvalue" sortKey={sortKey} dir={sortDir} />
+            </th>
+            <th className="pb-2 pr-4 font-medium text-left whitespace-nowrap">Stable</th>
             <th className={thCls} onClick={() => toggleSort("hedge_ratio")}>
               Hedge Ratio <SortIcon col="hedge_ratio" sortKey={sortKey} dir={sortDir} />
             </th>
@@ -93,6 +97,30 @@ export default function PairTable({ pairs, selectedKey, onSelect }: Props) {
                   <span className={`px-1.5 py-0.5 rounded font-mono ${pvalueBadge(pair.pvalue)}`}>
                     {pair.pvalue.toFixed(4)}
                   </span>
+                </td>
+                <td className="py-2 pr-4">
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-mono ${
+                      pair.bh_significant ? pvalueBadge(pair.adjusted_pvalue) : "text-faint"
+                    }`}
+                  >
+                    {pair.adjusted_pvalue.toFixed(4)}
+                  </span>
+                </td>
+                <td className="py-2 pr-4">
+                  {pair.is_stable === true && (
+                    <span className="px-1.5 py-0.5 rounded text-green-400 bg-green-900/40 font-mono">
+                      Yes
+                    </span>
+                  )}
+                  {pair.is_stable === false && (
+                    <span className="px-1.5 py-0.5 rounded text-red-400 bg-red-900/40 font-mono">
+                      No
+                    </span>
+                  )}
+                  {pair.is_stable === null && (
+                    <span className="text-faint font-mono">—</span>
+                  )}
                 </td>
                 <td className="py-2 pr-4 font-mono text-muted">{pair.hedge_ratio.toFixed(4)}</td>
                 <td className="py-2 pr-4 font-mono text-muted">

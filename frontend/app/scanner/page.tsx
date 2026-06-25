@@ -35,6 +35,8 @@ export default function ScannerPage() {
   const [tickers, setTickers] = useState<string[]>(DEFAULT_TICKERS);
   const [lookbackDays, setLookbackDays] = useState(365);
   const [zscoreWindow, setZscoreWindow] = useState(30);
+  const [sectorFilter, setSectorFilter] = useState(false);
+  const [qualityFilter, setQualityFilter] = useState<"all" | "bh" | "stable" | "both">("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResponse | null>(null);
@@ -51,7 +53,12 @@ export default function ScannerPage() {
       const res = await fetch(`${API}/api/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers, lookback_days: lookbackDays, zscore_window: zscoreWindow }),
+        body: JSON.stringify({
+          tickers,
+          lookback_days: lookbackDays,
+          zscore_window: zscoreWindow,
+          sector_filter: sectorFilter,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.detail ?? "Scan failed.");
@@ -67,6 +74,15 @@ export default function ScannerPage() {
     selectedKey && result
       ? (result.pairs.find((p) => pairKey(p.ticker1, p.ticker2) === selectedKey) ?? null)
       : null;
+
+  const filteredPairs = result
+    ? result.pairs.filter((p) => {
+        if (qualityFilter === "bh") return p.bh_significant;
+        if (qualityFilter === "stable") return p.is_stable === true;
+        if (qualityFilter === "both") return p.bh_significant && p.is_stable === true;
+        return true;
+      })
+    : [];
 
   return (
     <div className="min-h-screen bg-surface">
@@ -95,7 +111,7 @@ export default function ScannerPage() {
               ))}
             </div>
 
-            {/* Lookback + z-score window */}
+            {/* Lookback + z-score window + sector filter */}
             <div className="flex flex-wrap gap-6 pt-1 border-t border-divider">
               <div className="space-y-1">
                 <p className="label">Lookback</p>
@@ -126,6 +142,18 @@ export default function ScannerPage() {
                   />
                   <span className="text-xs font-mono text-muted w-14">{zscoreWindow}d</span>
                 </div>
+              </div>
+              <div className="space-y-1">
+                <p className="label">Pair Selection</p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sectorFilter}
+                    onChange={(e) => setSectorFilter(e.target.checked)}
+                    className="accent-primary w-3.5 h-3.5"
+                  />
+                  <span className="text-xs text-muted">Same sector only</span>
+                </label>
               </div>
             </div>
           </div>
@@ -163,7 +191,7 @@ export default function ScannerPage() {
             {/* Selected pair detail */}
             {selectedPair && (
               <div className="bg-panel rounded-xl border border-primary/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm font-mono font-semibold text-subtle">
                     {selectedPair.ticker1}
                     <span className="text-faint font-normal mx-1.5">/</span>
@@ -173,6 +201,29 @@ export default function ScannerPage() {
                     className={`text-xs font-mono px-2 py-0.5 rounded ${selectedPair.pvalue < 0.05 ? "bg-green-900/50 text-green-300" : "bg-amber-900/50 text-amber-300"}`}
                   >
                     p = {selectedPair.pvalue.toFixed(4)}
+                  </span>
+                  <span className="text-xs text-faint font-mono">
+                    adj = {selectedPair.adjusted_pvalue.toFixed(4)}
+                  </span>
+                  <span
+                    className={`text-xs font-mono px-2 py-0.5 rounded ${selectedPair.bh_significant ? "bg-green-900/40 text-green-400" : "bg-panel text-faint border border-divider"}`}
+                  >
+                    BH {selectedPair.bh_significant ? "sig" : "n/s"}
+                  </span>
+                  <span
+                    className={`text-xs font-mono px-2 py-0.5 rounded ${
+                      selectedPair.is_stable === true
+                        ? "bg-green-900/40 text-green-400"
+                        : selectedPair.is_stable === false
+                        ? "bg-red-900/40 text-red-400"
+                        : "bg-panel text-faint border border-divider"
+                    }`}
+                  >
+                    {selectedPair.is_stable === true
+                      ? "Stable"
+                      : selectedPair.is_stable === false
+                      ? "Unstable"
+                      : "Stability N/A"}
                   </span>
                   <span className="text-xs text-muted font-mono">
                     β = {selectedPair.hedge_ratio.toFixed(4)}
@@ -190,7 +241,7 @@ export default function ScannerPage() {
                 </div>
                 <Link
                   href={`/?t1=${selectedPair.ticker1}&t2=${selectedPair.ticker2}`}
-                  className="px-4 py-2 bg-primary text-white text-xs font-medium rounded-md hover:bg-primary-dark transition-colors whitespace-nowrap"
+                  className="px-4 py-2 bg-primary text-subtle text-xs font-medium rounded-md hover:bg-primary-dark transition-colors whitespace-nowrap"
                 >
                   Open in Backtester →
                 </Link>
@@ -199,11 +250,38 @@ export default function ScannerPage() {
 
             {/* View toggle + results card */}
             <Card>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-subtle">
-                  {result.pairs.length} pairs ·{" "}
-                  {result.pairs.filter((p) => p.is_cointegrated).length} cointegrated
-                </h2>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold text-subtle">
+                    {filteredPairs.length}
+                    {filteredPairs.length !== result.pairs.length && `/${result.pairs.length}`} pairs
+                    {" · "}
+                    {filteredPairs.filter((p) => p.is_cointegrated).length} cointegrated
+                  </h2>
+                  {/* Quality filter chips */}
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        { key: "all", label: "All" },
+                        { key: "bh", label: "BH sig" },
+                        { key: "stable", label: "Stable" },
+                        { key: "both", label: "BH + Stable" },
+                      ] as const
+                    ).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setQualityFilter(key)}
+                        className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
+                          qualityFilter === key
+                            ? "bg-primary/20 text-primary"
+                            : "text-faint hover:text-muted"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex gap-1 bg-surface rounded-md p-0.5">
                   {(["matrix", "table"] as const).map((v) => (
                     <button
@@ -223,12 +301,13 @@ export default function ScannerPage() {
                 <PairMatrix
                   tickers={result.tickers}
                   pairs={result.pairs}
+                  filteredKeys={new Set(filteredPairs.map((p) => pairKey(p.ticker1, p.ticker2)))}
                   selectedKey={selectedKey}
                   onSelect={setSelectedKey}
                 />
               ) : (
                 <PairTable
-                  pairs={result.pairs}
+                  pairs={filteredPairs}
                   selectedKey={selectedKey}
                   onSelect={setSelectedKey}
                 />

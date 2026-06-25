@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
 from cointegration import analyze_pair, scan_pair
-from data import fetch_prices, fetch_prices_batch
+from data import fetch_prices, fetch_prices_batch, fetch_sectors
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
 
@@ -60,6 +60,7 @@ class ScanRequest(BaseModel):
     tickers: list[str] = Field(..., min_length=2, max_length=12)
     lookback_days: int = Field(default=365, ge=90, le=1825)
     zscore_window: int = Field(default=30, ge=10, le=120)
+    sector_filter: bool = Field(default=False)
 
     @model_validator(mode="after")
     def check_valid(self) -> "ScanRequest":
@@ -101,22 +102,51 @@ def scan(req: ScanRequest) -> dict:
     Run cointegration scan over all N(N-1)/2 pairs from the provided ticker list.
 
     Fetches prices in a single batch call, then runs ADF on each combination.
-    Returns results sorted by p-value (most cointegrated first).
+    Applies three anti-overfitting filters:
+      1. Sector filter (optional) — skips cross-sector pairs to reduce the search space.
+      2. Stability test — flags pairs where cointegration holds in both sub-periods.
+      3. Benjamini-Hochberg correction — adjusts p-values for multiple comparisons.
+    Returns results sorted by raw p-value (most cointegrated first).
     """
+    from statsmodels.stats.multitest import multipletests
+
     try:
         prices = fetch_prices_batch(req.tickers, req.lookback_days)
         available = list(prices.columns)
 
+        # Fetch sectors in parallel when sector filter is requested
+        sectors: dict = {}
+        if req.sector_filter:
+            sectors = fetch_sectors(available)
+
         results = []
         for t1, t2 in combinations(available, 2):
+            # Skip cross-sector pairs when sector filter is enabled;
+            # allow through if either sector is unknown (None) to avoid false exclusions
+            if req.sector_filter:
+                s1, s2 = sectors.get(t1), sectors.get(t2)
+                if s1 is not None and s2 is not None and s1 != s2:
+                    continue
             try:
                 result = scan_pair(prices[t1], prices[t2], t1, t2, req.zscore_window)
                 results.append(result)
             except Exception:
                 pass  # skip pairs that fail (insufficient variance, etc.)
 
+        # Benjamini-Hochberg correction for multiple comparisons (FDR = 10%)
+        if len(results) > 1:
+            pvalues = [r["pvalue"] for r in results]
+            _, adj_pvalues, _, _ = multipletests(pvalues, alpha=0.1, method="fdr_bh")
+            for r, adj_p in zip(results, adj_pvalues):
+                r["adjusted_pvalue"] = round(float(adj_p), 4)
+                r["bh_significant"] = bool(adj_p < 0.1)
+        else:
+            for r in results:
+                r["adjusted_pvalue"] = r["pvalue"]
+                r["bh_significant"] = bool(r["pvalue"] < 0.1)
+
         results.sort(key=lambda x: x["pvalue"])
-        return {"pairs": results, "tickers": available}
+        return {"pairs": results, "tickers": available, "sectors": sectors}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

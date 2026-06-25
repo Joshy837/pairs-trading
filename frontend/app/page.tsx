@@ -22,6 +22,7 @@ const DEFAULT_PARAMS: Parameters = {
   transaction_cost_bps: 5,
   insample_pct: 70,
   use_kalman: false,
+  use_regime: false,
 };
 
 const PRESET_PAIRS = [
@@ -184,6 +185,7 @@ export default function Page() {
                   insampleEndDate={backtest?.insample_end_date}
                   ticker1={ticker1}
                   ticker2={ticker2}
+                  regime={backtest?.regime}
                 />
               </Card>
             </div>

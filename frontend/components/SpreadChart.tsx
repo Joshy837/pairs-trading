@@ -22,14 +22,33 @@ interface Props {
   insampleEndDate?: string;
   ticker1: string;
   ticker2: string;
+  regime?: (number | null)[] | null;
 }
 
-export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDate, ticker1, ticker2 }: Props) {
+function getTrendingSegments(regime: (number | null)[], dates: string[]) {
+  const segments: { start: string; end: string }[] = [];
+  let segStart: string | null = null;
+  for (let i = 0; i < regime.length; i++) {
+    const trending = regime[i] === 0;
+    if (trending && segStart === null) {
+      segStart = dates[i];
+    } else if (!trending && segStart !== null) {
+      segments.push({ start: segStart, end: dates[i - 1] });
+      segStart = null;
+    }
+  }
+  if (segStart !== null) segments.push({ start: segStart, end: dates[dates.length - 1] });
+  return segments;
+}
+
+export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDate, ticker1, ticker2, regime }: Props) {
   const chartData = data.dates.map((date, i) => ({
     date,
     spread: data.spread[i] !== null ? Number(data.spread[i]?.toFixed(4)) : undefined,
     zscore: data.zscore[i] !== null ? Number(data.zscore[i]?.toFixed(4)) : undefined,
   }));
+
+  const trendingSegments = regime ? getTrendingSegments(regime, data.dates) : [];
 
   const interval = Math.max(1, Math.floor(chartData.length / 7));
 
@@ -50,6 +69,9 @@ export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDat
               labelStyle={{ fontSize: CHART_AXIS.fontSize }}
               contentStyle={{ fontSize: CHART_AXIS.fontSize }}
             />
+            {trendingSegments.map(({ start, end }, i) => (
+              <ReferenceArea key={i} x1={start} x2={end} fill={CHART_COLORS.regime} fillOpacity={0.08} strokeOpacity={0} />
+            ))}
             {insampleEndDate && (
               <ReferenceLine
                 x={insampleEndDate}
@@ -90,6 +112,9 @@ export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDat
               labelStyle={{ fontSize: CHART_AXIS.fontSize }}
               contentStyle={{ fontSize: CHART_AXIS.fontSize }}
             />
+            {trendingSegments.map(({ start, end }, i) => (
+              <ReferenceArea key={i} x1={start} x2={end} fill={CHART_COLORS.regime} fillOpacity={0.08} strokeOpacity={0} />
+            ))}
             {/* Exit zone: mean-reversion achieved — subtle green center band */}
             <ReferenceArea y1={-exitZ} y2={exitZ} fill={CHART_COLORS.exit} fillOpacity={0.06} strokeOpacity={0} />
             {/* Entry-to-stop zone: active trade region — subtle red outer bands */}
@@ -122,8 +147,8 @@ export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDat
             />
             {stopZ !== undefined && (
               <>
-                <ReferenceLine y={stopZ} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1} />
-                <ReferenceLine y={-stopZ} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1} />
+                <ReferenceLine y={stopZ} stroke={CHART_COLORS.stop} strokeDasharray="3 3" strokeWidth={1} />
+                <ReferenceLine y={-stopZ} stroke={CHART_COLORS.stop} strokeDasharray="3 3" strokeWidth={1} />
               </>
             )}
             {insampleEndDate && (

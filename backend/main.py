@@ -45,6 +45,7 @@ class BacktestRequest(AnalyzeRequest):
     transaction_cost_bps: float = Field(default=5.0, ge=0.0, le=50.0)
     insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
     use_kalman: bool = Field(default=False)
+    use_regime: bool = Field(default=False)
 
     @model_validator(mode="after")
     def check_thresholds(self) -> "BacktestRequest":
@@ -141,6 +142,7 @@ def backtest(req: BacktestRequest) -> dict:
             req.transaction_cost_bps,
             req.insample_pct,
             req.use_kalman,
+            req.use_regime,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

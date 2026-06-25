@@ -10,6 +10,8 @@ export const CHART_COLORS = {
   grid: "#374151", // divider     — subtle dark grid
   zero: "#4b5563", // gray-600    — zero / baseline reference lines
   kalman: "#fb923c", // orange-400  — Kalman filter hedge ratio
+  stop: "#f59e0b",   // amber-400  — stop-loss threshold lines
+  regime: "#f59e0b", // amber-400  — trending regime overlay (unfavorable)
 } as const;
 
 export const CHART_AXIS = {

@@ -50,6 +50,7 @@ export interface BacktestResult {
   zscore: (number | null)[];
   hedge_ratio: number;
   insample_end_date: string;
+  regime: (number | null)[] | null;
 }
 
 export interface Parameters {
@@ -61,6 +62,7 @@ export interface Parameters {
   transaction_cost_bps: number;
   insample_pct: number; // integer 50–90; divided by 100 before sending to API
   use_kalman: boolean;
+  use_regime: boolean;
 }
 
 export interface ScanPairResult {

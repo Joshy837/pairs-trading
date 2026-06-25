@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from cointegration import compute_hedge_ratio, compute_kalman_hedge, compute_spread, compute_zscore
+from regime import detect_regimes
 
 
 def _to_json_list(s: pd.Series) -> list:
@@ -57,6 +58,7 @@ def run_backtest(
     transaction_cost_bps: float = 5.0,
     insample_pct: float = 0.7,
     use_kalman: bool = False,
+    use_regime: bool = False,
 ) -> dict:
     """
     Simulate the pairs trading strategy and return performance results.
@@ -105,6 +107,11 @@ def run_backtest(
     # Z-score computed over the full period (rolling, no look-ahead)
     zscore = compute_zscore(spread, zscore_window)
 
+    # Regime: fit HMM on in-sample spread, decode full series
+    regime: list[int | None] | None = None
+    if use_regime:
+        regime = detect_regimes(spread, insample_cutoff)
+
     # --- Signal generation (out-of-sample only) ---
     position = pd.Series(0.0, index=price1.index)
     current_pos = 0.0
@@ -115,7 +122,16 @@ def run_backtest(
         if math.isnan(z):
             continue
 
+        # Gate new entries: only open positions in favorable (mean-reverting) regime
+        in_favorable_regime = (
+            regime is None
+            or regime[i] is None
+            or regime[i] == 1
+        )
+
         if current_pos == 0.0:
+            if not in_favorable_regime:
+                continue
             if z > entry_z:
                 current_pos = -1.0
                 trades.append({
@@ -203,4 +219,5 @@ def run_backtest(
         "zscore": _to_json_list(zscore),
         "hedge_ratio": round(hedge_ratio, 6),
         "insample_end_date": insample_end_date,
+        "regime": regime,
     }

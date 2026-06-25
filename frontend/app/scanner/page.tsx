@@ -35,8 +35,7 @@ export default function ScannerPage() {
   const [tickers, setTickers] = useState<string[]>(DEFAULT_TICKERS);
   const [lookbackDays, setLookbackDays] = useState(365);
   const [zscoreWindow, setZscoreWindow] = useState(30);
-  const [sectorFilter, setSectorFilter] = useState(false);
-  const [qualityFilter, setQualityFilter] = useState<"all" | "bh" | "stable" | "both">("all");
+  const [qualityFilter, setQualityFilter] = useState<"all" | "stable">("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanResponse | null>(null);
@@ -57,7 +56,6 @@ export default function ScannerPage() {
           tickers,
           lookback_days: lookbackDays,
           zscore_window: zscoreWindow,
-          sector_filter: sectorFilter,
         }),
       });
       const json = await res.json();
@@ -77,9 +75,7 @@ export default function ScannerPage() {
 
   const filteredPairs = result
     ? result.pairs.filter((p) => {
-        if (qualityFilter === "bh") return p.bh_significant;
         if (qualityFilter === "stable") return p.is_stable === true;
-        if (qualityFilter === "both") return p.bh_significant && p.is_stable === true;
         return true;
       })
     : [];
@@ -143,18 +139,6 @@ export default function ScannerPage() {
                   <span className="text-xs font-mono text-muted w-14">{zscoreWindow}d</span>
                 </div>
               </div>
-              <div className="space-y-1">
-                <p className="label">Pair Selection</p>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={sectorFilter}
-                    onChange={(e) => setSectorFilter(e.target.checked)}
-                    className="accent-primary w-3.5 h-3.5"
-                  />
-                  <span className="text-xs text-muted">Same sector only</span>
-                </label>
-              </div>
             </div>
           </div>
         </Card>
@@ -204,11 +188,6 @@ export default function ScannerPage() {
                   </span>
                   <span className="text-xs text-faint font-mono">
                     adj = {selectedPair.adjusted_pvalue.toFixed(4)}
-                  </span>
-                  <span
-                    className={`text-xs font-mono px-2 py-0.5 rounded ${selectedPair.bh_significant ? "bg-green-900/40 text-green-400" : "bg-panel text-faint border border-divider"}`}
-                  >
-                    BH {selectedPair.bh_significant ? "sig" : "n/s"}
                   </span>
                   <span
                     className={`text-xs font-mono px-2 py-0.5 rounded ${
@@ -263,9 +242,7 @@ export default function ScannerPage() {
                     {(
                       [
                         { key: "all", label: "All" },
-                        { key: "bh", label: "BH sig" },
                         { key: "stable", label: "Stable" },
-                        { key: "both", label: "BH + Stable" },
                       ] as const
                     ).map(({ key, label }) => (
                       <button

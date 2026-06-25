@@ -13,10 +13,12 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const DEFAULT_TICKERS = ["KO", "PEP", "MCD", "YUM"];
 
 const PRESET_GROUPS = [
-  { label: "Consumer", tickers: ["KO", "PEP", "MCD", "YUM", "SBUX"] },
-  { label: "Energy", tickers: ["XOM", "CVX", "COP", "PSX", "VLO"] },
-  { label: "Tech", tickers: ["AAPL", "MSFT", "GOOGL", "META", "AMZN"] },
-  { label: "Finance", tickers: ["JPM", "BAC", "GS", "MS", "WFC"] },
+  { label: "Consumer", tickers: ["KO", "PEP", "MCD", "YUM", "SBUX", "WMT", "COST", "PG", "CL", "KHC"] },
+  { label: "Energy", tickers: ["XOM", "CVX", "COP", "PSX", "VLO", "MPC", "SLB", "HAL", "OXY", "EOG"] },
+  { label: "Tech", tickers: ["AAPL", "MSFT", "GOOGL", "META", "AMZN", "NVDA", "AMD", "INTC", "QCOM", "AVGO"] },
+  { label: "Finance", tickers: ["JPM", "BAC", "GS", "MS", "WFC", "C", "BK", "USB", "PNC", "AXP"] },
+  { label: "Health", tickers: ["JNJ", "PFE", "UNH", "ABT", "MRK", "LLY", "BMY", "ABBV", "CVS", "HUM"] },
+  { label: "Industrials", tickers: ["BA", "CAT", "GE", "HON", "UPS", "FDX", "MMM", "RTX", "LMT", "NOC"] },
 ];
 
 function pairKey(t1: string, t2: string): string {

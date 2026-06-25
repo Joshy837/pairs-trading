@@ -59,7 +59,7 @@ class BacktestRequest(AnalyzeRequest):
 
 
 class ScanRequest(BaseModel):
-    tickers: list[str] = Field(..., min_length=2, max_length=12)
+    tickers: list[str] = Field(..., min_length=2, max_length=20)
     lookback_days: int = Field(default=365, ge=90, le=1825)
     zscore_window: int = Field(default=30, ge=10, le=120)
     sector_filter: bool = Field(default=False)

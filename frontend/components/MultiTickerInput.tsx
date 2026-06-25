@@ -2,7 +2,7 @@
 
 import { KeyboardEvent, useState } from "react";
 
-const MAX_TICKERS = 12;
+const MAX_TICKERS = 20;
 
 interface Props {
   tickers: string[];

@@ -80,6 +80,7 @@ export default function ParameterControls({ params, onChange }: Props) {
   const set = (key: keyof Parameters) => (v: number) => onChange({ ...params, [key]: v });
 
   return (
+    <>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <SliderField
         label="Lookback Window"
@@ -142,5 +143,37 @@ export default function ParameterControls({ params, onChange }: Props) {
         onChange={set("insample_pct")}
       />
     </div>
+
+    <div className="mt-5 flex items-center gap-3">
+      <span className="label">Hedge Method</span>
+      <div className="flex items-center rounded-md border border-divider overflow-hidden">
+        <button
+          onClick={() => onChange({ ...params, use_kalman: false })}
+          className={`px-3 py-1 text-xs font-medium transition-colors ${
+            !params.use_kalman
+              ? "bg-primary text-subtle"
+              : "bg-surface text-muted hover:text-subtle"
+          }`}
+        >
+          OLS
+        </button>
+        <button
+          onClick={() => onChange({ ...params, use_kalman: true })}
+          className={`px-3 py-1 text-xs font-medium transition-colors ${
+            params.use_kalman
+              ? "bg-primary text-subtle"
+              : "bg-surface text-muted hover:text-subtle"
+          }`}
+        >
+          Kalman Filter
+        </button>
+      </div>
+      <span className="text-xs text-faint">
+        {params.use_kalman
+          ? "Time-varying β updated each day — no lookahead bias"
+          : "Static β estimated on in-sample window only"}
+      </span>
+    </div>
+    </>
   );
 }

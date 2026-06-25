@@ -21,6 +21,7 @@ export interface AnalysisResult {
   dates: string[];
   rolling_hedge: (number | null)[];
   rolling_hedge_window: number;
+  kalman_hedge: (number | null)[];
 }
 
 export interface Trade {
@@ -59,6 +60,7 @@ export interface Parameters {
   stop_z: number;
   transaction_cost_bps: number;
   insample_pct: number; // integer 50–90; divided by 100 before sending to API
+  use_kalman: boolean;
 }
 
 export interface ScanPairResult {

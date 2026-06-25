@@ -21,6 +21,7 @@ const DEFAULT_PARAMS: Parameters = {
   stop_z: 4.0,
   transaction_cost_bps: 5,
   insample_pct: 70,
+  use_kalman: false,
 };
 
 const PRESET_PAIRS = [

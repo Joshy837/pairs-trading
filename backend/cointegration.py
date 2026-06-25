@@ -113,6 +113,45 @@ def compute_half_life(spread: pd.Series) -> "float | None":
     return float(-math.log(2) / math.log(1 + gamma))
 
 
+def compute_kalman_hedge(price1: pd.Series, price2: pd.Series, delta: float = 1e-4) -> pd.Series:
+    """
+    Kalman filter estimate of the time-varying hedge ratio β.
+
+    Models [β, α] as a random walk (state) observed via price1_t = β_t·price2_t + α_t + noise.
+    Causal/online — β_t uses only data up to and including day t, so no lookahead bias.
+
+    delta controls process noise: larger values let β change faster.
+    """
+    n = len(price1)
+    p1 = price1.values.astype(float)
+    p2 = price2.values.astype(float)
+
+    # Process noise covariance (random-walk scaling)
+    Ve = delta / (1.0 - delta)
+    Q = np.eye(2) * Ve
+    R = 1.0  # measurement noise variance (normalised)
+
+    # Warm-start state from first ~30 points via OLS
+    init_n = max(2, min(30, n // 5))
+    X_init = np.column_stack([p2[:init_n], np.ones(init_n)])
+    theta, _, _, _ = np.linalg.lstsq(X_init, p1[:init_n], rcond=None)  # [β, α]
+    P = np.eye(2)
+
+    betas = np.full(n, np.nan)
+
+    for t in range(n):
+        H = np.array([p2[t], 1.0])          # observation vector (2,)
+        P_pred = P + Q                        # predicted covariance (2,2)
+        S = float(H @ P_pred @ H) + R        # innovation variance (scalar)
+        K = (P_pred @ H) / S                 # Kalman gain (2,)
+        innovation = p1[t] - float(H @ theta)
+        theta = theta + K * innovation        # state update
+        P = (np.eye(2) - np.outer(K, H)) @ P_pred
+        betas[t] = theta[0]
+
+    return pd.Series(betas, index=price1.index, name="kalman_hedge")
+
+
 def compute_rolling_hedge(price1: pd.Series, price2: pd.Series, window: int) -> pd.Series:
     """
     Rolling OLS hedge ratio using a fixed lookback window.
@@ -184,6 +223,7 @@ def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) 
 
     rolling_window = max(zscore_window * 3, 90)
     rolling_hedge = compute_rolling_hedge(price1, price2, rolling_window)
+    kalman_hedge = compute_kalman_hedge(price1, price2)
 
     return {
         "hedge_ratio": round(hedge_ratio, 6),
@@ -195,4 +235,5 @@ def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) 
         "dates": price1.index.strftime("%Y-%m-%d").tolist(),
         "rolling_hedge": _to_json_list(rolling_hedge),
         "rolling_hedge_window": rolling_window,
+        "kalman_hedge": _to_json_list(kalman_hedge),
     }

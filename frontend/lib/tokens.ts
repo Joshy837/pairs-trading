@@ -9,6 +9,7 @@ export const CHART_COLORS = {
   exit: "#4ade80", // green-400   — z-score exit bands
   grid: "#374151", // divider     — subtle dark grid
   zero: "#4b5563", // gray-600    — zero / baseline reference lines
+  kalman: "#fb923c", // orange-400  — Kalman filter hedge ratio
 } as const;
 
 export const CHART_AXIS = {

@@ -21,9 +21,12 @@ interface Props {
 export default function HedgeStabilityChart({ data, insampleEndDate }: Props) {
   if (!data.rolling_hedge || data.rolling_hedge.every((v) => v === null)) return null;
 
+  const hasKalman = data.kalman_hedge && data.kalman_hedge.some((v) => v !== null);
+
   const chartData = data.dates.map((date, i) => ({
     date,
     beta: data.rolling_hedge![i] !== null ? Number((data.rolling_hedge![i] as number).toFixed(4)) : undefined,
+    kalman: hasKalman && data.kalman_hedge[i] !== null ? Number((data.kalman_hedge[i] as number).toFixed(4)) : undefined,
   }));
 
   const interval = Math.max(1, Math.floor(chartData.length / 7));
@@ -31,10 +34,13 @@ export default function HedgeStabilityChart({ data, insampleEndDate }: Props) {
   return (
     <div>
       <p className="text-xs font-medium text-muted mb-2">
-        Rolling Hedge Ratio (β) &nbsp;
-        <span className="text-faint">{data.rolling_hedge_window}-day window</span>
+        Hedge Ratio (β) &nbsp;
+        <span style={{ color: CHART_COLORS.spread }}>— rolling {data.rolling_hedge_window}d</span>
+        {hasKalman && (
+          <>&nbsp;<span style={{ color: CHART_COLORS.kalman }}>— Kalman</span></>
+        )}
         &nbsp;·&nbsp;
-        <span className="text-faint">dashed = fixed β {data.hedge_ratio.toFixed(4)}</span>
+        <span className="text-faint">dashed = fixed OLS β {data.hedge_ratio.toFixed(4)}</span>
       </p>
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
@@ -42,7 +48,10 @@ export default function HedgeStabilityChart({ data, insampleEndDate }: Props) {
           <XAxis dataKey="date" interval={interval} tick={CHART_AXIS} tickLine={false} />
           <YAxis tick={CHART_AXIS} tickLine={false} width={60} />
           <Tooltip
-            formatter={(v: number) => [v?.toFixed(4), "β (rolling)"]}
+            formatter={(v: number, name: string) => [
+              v?.toFixed(4),
+              name === "kalman" ? "β (Kalman)" : "β (rolling)",
+            ]}
             labelStyle={{ fontSize: CHART_AXIS.fontSize }}
             contentStyle={{ fontSize: CHART_AXIS.fontSize }}
           />
@@ -69,6 +78,16 @@ export default function HedgeStabilityChart({ data, insampleEndDate }: Props) {
             strokeWidth={1.5}
             connectNulls={false}
           />
+          {hasKalman && (
+            <Line
+              type="monotone"
+              dataKey="kalman"
+              stroke={CHART_COLORS.kalman}
+              dot={false}
+              strokeWidth={1.5}
+              connectNulls={false}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>

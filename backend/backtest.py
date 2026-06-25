@@ -25,7 +25,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from cointegration import compute_hedge_ratio, compute_spread, compute_zscore
+from cointegration import compute_hedge_ratio, compute_kalman_hedge, compute_spread, compute_zscore
 
 
 def _to_json_list(s: pd.Series) -> list:
@@ -56,6 +56,7 @@ def run_backtest(
     stop_z: float = 4.0,
     transaction_cost_bps: float = 5.0,
     insample_pct: float = 0.7,
+    use_kalman: bool = False,
 ) -> dict:
     """
     Simulate the pairs trading strategy and return performance results.
@@ -80,21 +81,29 @@ def run_backtest(
     if entry_z >= stop_z:
         raise ValueError("stop_z must be strictly greater than entry_z.")
 
-    # Walk-forward: estimate hedge ratio on in-sample window only
+    # Walk-forward split: OOS trading begins at insample_cutoff
     insample_cutoff = max(zscore_window * 2, int(len(price1) * insample_pct))
     insample_cutoff = min(insample_cutoff, len(price1) - zscore_window)
 
-    hedge_ratio = compute_hedge_ratio(
-        price1.iloc[:insample_cutoff], price2.iloc[:insample_cutoff]
-    )
-
-    # Spread and z-score computed over the full period (rolling, no look-ahead)
-    spread = compute_spread(price1, price2, hedge_ratio)
-    zscore = compute_zscore(spread, zscore_window)
-
     ret1 = price1.pct_change()
     ret2 = price2.pct_change()
-    spread_returns = ret1 - hedge_ratio * ret2
+
+    if use_kalman:
+        # Time-varying β: Kalman filter is causal, no lookahead bias
+        kalman_beta = compute_kalman_hedge(price1, price2)
+        spread = (price1 - kalman_beta * price2).rename("spread")
+        hedge_ratio = float(kalman_beta.iloc[insample_cutoff - 1])  # β at in-sample end
+        spread_returns = ret1 - kalman_beta * ret2
+    else:
+        # Static OLS β estimated on in-sample period only
+        hedge_ratio = compute_hedge_ratio(
+            price1.iloc[:insample_cutoff], price2.iloc[:insample_cutoff]
+        )
+        spread = compute_spread(price1, price2, hedge_ratio)
+        spread_returns = ret1 - hedge_ratio * ret2
+
+    # Z-score computed over the full period (rolling, no look-ahead)
+    zscore = compute_zscore(spread, zscore_window)
 
     # --- Signal generation (out-of-sample only) ---
     position = pd.Series(0.0, index=price1.index)

@@ -175,37 +175,6 @@ export default function ParameterControls({ params, onChange }: Props) {
             : "Static β estimated on in-sample window only"}
         </span>
       </div>
-
-      <div className="flex items-center gap-3">
-        <span className="label">Regime Filter</span>
-        <div className="flex items-center rounded-md border border-divider overflow-hidden">
-          <button
-            onClick={() => onChange({ ...params, use_regime: false })}
-            className={`px-3 py-1 text-xs font-medium transition-colors ${
-              !params.use_regime
-                ? "bg-primary text-subtle"
-                : "bg-surface text-muted hover:text-subtle"
-            }`}
-          >
-            Off
-          </button>
-          <button
-            onClick={() => onChange({ ...params, use_regime: true })}
-            className={`px-3 py-1 text-xs font-medium transition-colors ${
-              params.use_regime
-                ? "bg-primary text-subtle"
-                : "bg-surface text-muted hover:text-subtle"
-            }`}
-          >
-            HMM
-          </button>
-        </div>
-        <span className="text-xs text-faint">
-          {params.use_regime
-            ? "2-state HMM suppresses entries in trending regimes"
-            : "All signals active regardless of market regime"}
-        </span>
-      </div>
     </div>
     </>
   );

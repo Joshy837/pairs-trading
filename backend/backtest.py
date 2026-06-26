@@ -25,7 +25,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from cointegration import compute_hedge_ratio, compute_kalman_hedge, compute_spread, compute_zscore
+from cointegration import compute_half_life, compute_hedge_ratio, compute_kalman_hedge, compute_spread, compute_zscore
 from regime import detect_regimes
 
 
@@ -60,6 +60,8 @@ def run_backtest(
     use_kalman: bool = False,
     use_regime: bool = False,
     use_log_prices: bool = False,
+    max_holding_days: "int | None" = None,
+    use_halflife_hold: bool = False,
     spy: "pd.Series | None" = None,
 ) -> dict:
     """
@@ -118,6 +120,12 @@ def run_backtest(
     # Z-score computed over the full period (rolling, no look-ahead)
     zscore = compute_zscore(spread, zscore_window)
 
+    # Auto half-life hold: 2× half-life gives ~75% expected reversion before forced exit
+    if use_halflife_hold:
+        hl = compute_half_life(spread.iloc[:insample_cutoff])
+        if hl is not None and hl > 0:
+            max_holding_days = max(5, round(2 * hl))
+
     # Regime: fit HMM on in-sample spread, decode full series
     regime: list[int | None] | None = None
     if use_regime:
@@ -126,6 +134,7 @@ def run_backtest(
     # --- Signal generation (out-of-sample only) ---
     position = pd.Series(0.0, index=price1.index)
     current_pos = 0.0
+    entry_day: "int | None" = None
     trades: list[dict] = []
 
     for i in range(insample_cutoff, len(zscore)):
@@ -145,34 +154,48 @@ def run_backtest(
                 continue
             if z > entry_z:
                 current_pos = -1.0
+                entry_day = i
                 trades.append({
                     "date": price1.index[i].strftime("%Y-%m-%d"),
                     "type": "short",
                     "entry_z": round(z, 3),
                     "stop_triggered": False,
+                    "max_hold_triggered": False,
                 })
             elif z < -entry_z:
                 current_pos = 1.0
+                entry_day = i
                 trades.append({
                     "date": price1.index[i].strftime("%Y-%m-%d"),
                     "type": "long",
                     "entry_z": round(z, 3),
                     "stop_triggered": False,
+                    "max_hold_triggered": False,
                 })
         else:
+            # Max holding period: force close if trade has run too long
+            if max_holding_days is not None and entry_day is not None and (i - entry_day) >= max_holding_days:
+                if trades:
+                    trades[-1]["exit_date"] = price1.index[i].strftime("%Y-%m-%d")
+                    trades[-1]["exit_z"] = round(z, 3)
+                    trades[-1]["max_hold_triggered"] = True
+                current_pos = 0.0
+                entry_day = None
             # Stop-loss: spread diverging past stop_z
-            if abs(z) >= stop_z:
+            elif abs(z) >= stop_z:
                 if trades:
                     trades[-1]["exit_date"] = price1.index[i].strftime("%Y-%m-%d")
                     trades[-1]["exit_z"] = round(z, 3)
                     trades[-1]["stop_triggered"] = True
                 current_pos = 0.0
+                entry_day = None
             # Normal mean-reversion exit
             elif abs(z) < exit_z:
                 if trades:
                     trades[-1]["exit_date"] = price1.index[i].strftime("%Y-%m-%d")
                     trades[-1]["exit_z"] = round(z, 3)
                 current_pos = 0.0
+                entry_day = None
 
         position.iloc[i] = current_pos
 
@@ -287,4 +310,5 @@ def run_backtest(
         "insample_end_date": insample_end_date,
         "regime": regime,
         "benchmark": benchmark_list,
+        "effective_max_hold": max_holding_days,
     }

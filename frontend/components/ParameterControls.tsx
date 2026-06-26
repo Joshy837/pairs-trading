@@ -237,6 +237,49 @@ export default function ParameterControls({ params, onChange }: Props) {
             : "Spread = P₁ − β·P₂ — standard dollar-spread"}
         </span>
       </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="label">Max Hold Period</span>
+        <div className="flex items-center rounded-md border border-divider overflow-hidden">
+          {(["off", "auto", "custom"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => onChange({ ...params, max_hold_mode: mode })}
+              className={`px-3 py-1 text-xs font-medium transition-colors ${
+                params.max_hold_mode === mode
+                  ? "bg-primary text-subtle"
+                  : "bg-surface text-muted hover:text-subtle"
+              }`}
+            >
+              {mode === "off" ? "Off" : mode === "auto" ? "½-life" : "Custom"}
+            </button>
+          ))}
+        </div>
+        {params.max_hold_mode === "custom" && (
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min={5}
+              max={200}
+              step={5}
+              value={params.max_holding_days}
+              onChange={(e) => {
+                const v = Math.max(5, Math.min(200, Number(e.target.value)));
+                if (!isNaN(v)) onChange({ ...params, max_holding_days: v });
+              }}
+              className="w-14 text-right text-xs font-mono text-subtle bg-panel border border-transparent hover:border-divider focus:border-primary focus:outline-none rounded px-1 py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <span className="text-xs text-faint">days</span>
+          </div>
+        )}
+        <span className="text-xs text-faint">
+          {params.max_hold_mode === "auto"
+            ? "Force close after 2× half-life (~75% reversion expected) — estimated on in-sample data"
+            : params.max_hold_mode === "custom"
+            ? `Force close after ${params.max_holding_days}d`
+            : "No time limit — trades run until z-score reverts or stop-loss triggers"}
+        </span>
+      </div>
     </div>
     </>
   );

@@ -12,14 +12,15 @@ function tradeDuration(t: Trade): number {
 }
 
 function exportCSV(trades: Trade[]) {
-  const headers = ["Entry Date", "Direction", "Entry Z", "Exit Date", "Exit Z", "P&L", "Duration (days)", "Stop"];
+  const headers = ["Entry Date", "Direction", "Entry Z", "Exit Date", "Exit Z", "P&L", "Duration (days)", "Exit Reason"];
   const rows = trades.map((t) => {
     const days = t.exit_date ? Math.round(tradeDuration(t) / 86400000) : "";
     const pnl =
       t.pnl !== null && t.pnl !== undefined
         ? ((t.pnl as number) * 100).toFixed(2) + "%"
         : "";
-    return [t.date, t.type, t.entry_z, t.exit_date ?? "", t.exit_z ?? "", pnl, days, t.stop_triggered ? "YES" : "NO"];
+    const reason = t.stop_triggered ? "STOP" : t.max_hold_triggered ? "MAX HOLD" : "—";
+    return [t.date, t.type, t.entry_z, t.exit_date ?? "", t.exit_z ?? "", pnl, days, reason];
   });
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -134,11 +135,10 @@ export default function TradeLog({ trades }: Props) {
                   <td className="py-1.5 pr-4 font-mono text-muted">{t.exit_date ?? "—"}</td>
                   <td className="py-1.5 pr-4 font-mono">
                     {t.exit_z !== undefined ? (
-                      <span className={t.stop_triggered ? "text-amber-400" : "text-muted"}>
+                      <span className={t.stop_triggered ? "text-amber-400" : t.max_hold_triggered ? "text-primary" : "text-muted"}>
                         {t.exit_z}
-                        {t.stop_triggered && (
-                          <span className="ml-1 font-semibold">STOP</span>
-                        )}
+                        {t.stop_triggered && <span className="ml-1 font-semibold">STOP</span>}
+                        {t.max_hold_triggered && <span className="ml-1 font-semibold">TIME</span>}
                       </span>
                     ) : (
                       <span className="text-muted">—</span>

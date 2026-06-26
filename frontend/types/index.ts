@@ -22,6 +22,7 @@ export interface AnalysisResult {
   rolling_hedge: (number | null)[];
   rolling_hedge_window: number;
   kalman_hedge: (number | null)[];
+  half_life: number | null;
 }
 
 export interface Trade {
@@ -31,6 +32,7 @@ export interface Trade {
   exit_date?: string;
   exit_z?: number;
   stop_triggered?: boolean;
+  max_hold_triggered?: boolean;
   pnl?: number | null;
 }
 
@@ -56,6 +58,7 @@ export interface BacktestResult {
   insample_end_date: string;
   regime: (number | null)[] | null;
   benchmark: (number | null)[] | null;
+  effective_max_hold: number | null;
 }
 
 export interface Parameters {
@@ -69,6 +72,8 @@ export interface Parameters {
   use_kalman: boolean;
   use_regime: boolean;
   use_log_prices: boolean;
+  max_hold_mode: "off" | "auto" | "custom";
+  max_holding_days: number; // only used when max_hold_mode === "custom"
 }
 
 export interface ScanPairResult {

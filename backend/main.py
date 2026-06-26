@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
+from typing import Optional
 
 from backtest import run_backtest
 from cointegration import analyze_pair, scan_pair
@@ -58,6 +59,8 @@ class BacktestRequest(AnalyzeRequest):
     insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
     use_kalman: bool = Field(default=False)
     use_regime: bool = Field(default=False)
+    max_holding_days: Optional[int] = Field(default=None, ge=5, le=200)
+    use_halflife_hold: bool = Field(default=False)
 
     @model_validator(mode="after")
     def check_thresholds(self) -> "BacktestRequest":
@@ -550,6 +553,8 @@ def backtest(req: BacktestRequest) -> dict:
             req.use_kalman,
             req.use_regime,
             req.use_log_prices,
+            max_holding_days=req.max_holding_days,
+            use_halflife_hold=req.use_halflife_hold,
             spy=spy,
         )
     except ValueError as exc:

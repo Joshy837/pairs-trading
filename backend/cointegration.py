@@ -266,6 +266,8 @@ def analyze_pair(
     rolling_hedge = compute_rolling_hedge(p1, p2, rolling_window)
     kalman_hedge = compute_kalman_hedge(p1, p2)
 
+    half_life = compute_half_life(spread)
+
     return {
         "hedge_ratio": round(hedge_ratio, 6),
         "adf": adf,
@@ -277,4 +279,5 @@ def analyze_pair(
         "rolling_hedge": _to_json_list(rolling_hedge),
         "rolling_hedge_window": rolling_window,
         "kalman_hedge": _to_json_list(kalman_hedge),
+        "half_life": round(half_life, 1) if half_life is not None else None,
     }

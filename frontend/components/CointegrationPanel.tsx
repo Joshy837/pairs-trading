@@ -30,7 +30,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
-  const { adf, johansen, hedge_ratio, is_cointegrated } = data;
+  const { adf, johansen, hedge_ratio, is_cointegrated, half_life } = data;
 
   return (
     <div className="space-y-4">
@@ -84,6 +84,16 @@ export default function CointegrationPanel({ data, ticker1, ticker2 }: Props) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Half-life */}
+      <div className="flex items-center justify-between rounded-md bg-surface px-3 py-2">
+        <span className="text-xs text-muted">Half-life of mean reversion</span>
+        {half_life !== null && half_life !== undefined ? (
+          <span className="text-xs font-mono font-semibold text-subtle">{half_life.toFixed(1)} trading days</span>
+        ) : (
+          <span className="text-xs font-mono text-faint">— (spread not mean-reverting)</span>
+        )}
       </div>
 
       {!is_cointegrated && (

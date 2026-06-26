@@ -24,6 +24,8 @@ const DEFAULT_PARAMS: Parameters = {
   use_kalman: false,
   use_regime: false,
   use_log_prices: false,
+  max_hold_mode: "off",
+  max_holding_days: 30,
 };
 
 const PRESET_PAIRS = [
@@ -65,11 +67,14 @@ export default function Page() {
     setBacktest(null);
     setLoading(true);
 
+    const { max_hold_mode, max_holding_days: customMaxHold, ...restParams } = params;
     const body = JSON.stringify({
       ticker1,
       ticker2,
-      ...params,
-      insample_pct: params.insample_pct / 100,
+      ...restParams,
+      insample_pct: restParams.insample_pct / 100,
+      max_holding_days: max_hold_mode === "custom" ? customMaxHold : null,
+      use_halflife_hold: max_hold_mode === "auto",
     });
 
     try {
@@ -195,6 +200,13 @@ export default function Page() {
             <Card title="Backtest Performance">
               <div className="space-y-5">
                 <ResultsPanel metrics={backtest.metrics} />
+                {backtest.effective_max_hold !== null && (
+                  <p className="text-xs text-faint">
+                    Max hold:{" "}
+                    <span className="font-mono text-muted">{backtest.effective_max_hold}d</span>
+                    {params.max_hold_mode === "auto" && " (2× in-sample half-life)"}
+                  </p>
+                )}
                 <div>
                   <p className="text-xs font-medium text-muted mb-2">
                     Equity Curve (starts at $100)

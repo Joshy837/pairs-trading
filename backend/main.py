@@ -11,7 +11,13 @@ from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
 from cointegration import analyze_pair, scan_pair
-from data import fetch_benchmark, fetch_prices, fetch_prices_batch, fetch_sectors
+from data import fetch_benchmark, fetch_factor_prices, fetch_prices, fetch_prices_batch, fetch_sectors
+from factor import (
+    analyze_factor_pair,
+    compute_spread_stats,
+    fit_factor_model,
+    prepare_aligned_returns,
+)
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
 
@@ -76,6 +82,30 @@ class ScanRequest(BaseModel):
         upper = [t.upper() for t in self.tickers]
         if len(set(upper)) != len(upper):
             raise ValueError("Duplicate tickers in list.")
+        return self
+
+
+SECTOR_ETFS = {
+    "XLF", "XLK", "XLE", "XLV", "XLI", "XLP", "XLU", "XLY", "XLB", "XLRE", "XLC",
+}
+
+
+class FactorAnalyzeRequest(BaseModel):
+    ticker1: str = Field(..., min_length=1, max_length=10)
+    ticker2: str = Field(..., min_length=1, max_length=10)
+    sector_etf: str = Field(default="XLK", min_length=2, max_length=5)
+    lookback_days: int = Field(default=730, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "FactorAnalyzeRequest":
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        if self.sector_etf.upper() not in SECTOR_ETFS:
+            raise ValueError(f"sector_etf must be one of: {', '.join(sorted(SECTOR_ETFS))}.")
         return self
 
 
@@ -238,6 +268,112 @@ def scan_stream(req: ScanRequest) -> StreamingResponse:
             yield _event({"type": "error", "message": str(exc)})
         except Exception as exc:
             yield _event({"type": "error", "message": f"Scan failed: {exc}"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/factor-analyze")
+def factor_analyze(req: FactorAnalyzeRequest) -> dict:
+    """
+    3-factor decomposition of a stock pair using SPY (market), a sector ETF, and
+    SPY momentum (12-minus-1-month). Returns factor loadings and residual spread
+    cointegration stats for both stocks.
+    """
+    try:
+        p1, p2, spy, sector = fetch_factor_prices(
+            req.ticker1, req.ticker2, req.sector_etf, req.lookback_days
+        )
+        return analyze_factor_pair(p1, p2, spy, sector, req.zscore_window, req.ticker1, req.ticker2)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Factor analysis failed: {exc}")
+
+
+@app.post("/api/factor-analyze/stream")
+def factor_analyze_stream(req: FactorAnalyzeRequest) -> StreamingResponse:
+    """
+    SSE stream of the 3-factor analysis pipeline.
+
+    Events (JSON in data: field):
+      fetching      — {tickers}
+      step          — {text, kind}  progress log line
+      regression    — {ticker, r_squared, market, sector, momentum}
+      adf_result    — {p_value, is_stationary}
+      complete      — full factor analysis result
+      error         — {message}
+    """
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def generate():
+        try:
+            tickers = [req.ticker1.upper(), req.ticker2.upper(), "SPY", req.sector_etf.upper()]
+            yield _event({"type": "fetching", "tickers": tickers})
+
+            p1, p2, spy, sector = fetch_factor_prices(
+                req.ticker1, req.ticker2, req.sector_etf, req.lookback_days
+            )
+            yield _event({
+                "type": "step",
+                "text": f"Downloaded {len(p1)} trading days  ({p1.index[0].strftime('%Y-%m-%d')} → {p1.index[-1].strftime('%Y-%m-%d')})",
+                "kind": "info",
+            })
+
+            yield _event({"type": "step", "text": "Computing factor returns + SPY momentum", "kind": "info"})
+            returns = prepare_aligned_returns(p1, p2, spy, sector, req.zscore_window)
+            yield _event({
+                "type": "step",
+                "text": f"{len(returns)} observations after momentum warmup",
+                "kind": "info",
+            })
+
+            yield _event({"type": "step", "text": f"Regressing {req.ticker1.upper()} on 3 factors", "kind": "info"})
+            _, resid1, loadings1 = fit_factor_model(returns, "p1")
+            yield _event({
+                "type": "regression",
+                "ticker": req.ticker1.upper(),
+                "r_squared": loadings1["r_squared"],
+                "market": loadings1["market"],
+                "sector": loadings1["sector"],
+                "momentum": loadings1["momentum"],
+            })
+
+            yield _event({"type": "step", "text": f"Regressing {req.ticker2.upper()} on 3 factors", "kind": "info"})
+            _, resid2, loadings2 = fit_factor_model(returns, "p2")
+            yield _event({
+                "type": "regression",
+                "ticker": req.ticker2.upper(),
+                "r_squared": loadings2["r_squared"],
+                "market": loadings2["market"],
+                "sector": loadings2["sector"],
+                "momentum": loadings2["momentum"],
+            })
+
+            yield _event({"type": "step", "text": "Computing residual spread + ADF test", "kind": "info"})
+            stats = compute_spread_stats(resid1, resid2, req.zscore_window)
+            yield _event({
+                "type": "adf_result",
+                "p_value": stats["adf"]["p_value"],
+                "is_stationary": stats["adf"]["is_stationary"],
+            })
+
+            result = {
+                "ticker1": req.ticker1.upper(),
+                "ticker2": req.ticker2.upper(),
+                "factor_loadings": {"ticker1": loadings1, "ticker2": loadings2},
+                **stats,
+            }
+            yield _event({"type": "complete", "result": result})
+
+        except ValueError as exc:
+            yield _event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            yield _event({"type": "error", "message": f"Factor analysis failed: {exc}"})
 
     return StreamingResponse(
         generate(),

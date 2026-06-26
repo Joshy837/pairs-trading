@@ -27,6 +27,9 @@ export default function Navbar() {
           <Link href="/scanner" className={linkCls("/scanner")}>
             Scanner
           </Link>
+          <Link href="/factor" className={linkCls("/factor")}>
+            Factor
+          </Link>
         </nav>
       </div>
     </header>

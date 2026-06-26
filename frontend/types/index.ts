@@ -87,6 +87,30 @@ export interface ScanPairResult {
   correlation?: number;
 }
 
+export interface FactorLoadings {
+  market: number;
+  sector: number;
+  momentum: number;
+  alpha: number;
+  r_squared: number;
+}
+
+export interface FactorAnalysisResult {
+  ticker1: string;
+  ticker2: string;
+  factor_loadings: {
+    ticker1: FactorLoadings;
+    ticker2: FactorLoadings;
+  };
+  hedge_ratio: number;
+  adf: ADFResult;
+  half_life: number | null;
+  current_zscore: number | null;
+  spread: (number | null)[];
+  zscore: (number | null)[];
+  dates: string[];
+}
+
 export interface LogEntry {
   kind: "info" | "header" | "pass" | "fail" | "summary";
   text: string;

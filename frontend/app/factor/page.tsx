@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import ResidualSpreadChart from "@/components/ResidualSpreadChart";
+import ResidualStockChart from "@/components/ResidualStockChart";
 import ScanProgress from "@/components/ScanProgress";
 import Select from "@/components/Select";
-import { FactorAnalysisResult, LogEntry } from "@/types";
+import { FactorLoadings, FactorStockResult, LogEntry } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -31,57 +31,154 @@ function Card({ title, children }: { title?: string; children: React.ReactNode }
   );
 }
 
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
+function Metric({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <div className="bg-surface rounded-lg p-3 border border-divider">
+      <div className="label mb-1">{label}</div>
+      <div className="text-lg font-semibold font-mono text-subtle leading-tight">{value}</div>
+      {sub && <div className="text-xs text-faint mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function coef(n: number, decimals: number): string {
+  const abs = Math.abs(n).toFixed(decimals);
+  return n < 0 ? `− ${abs}` : `+ ${abs}`;
+}
+
+function RegressionCard({
+  ticker,
+  loadings,
+  sectorEtf,
+}: {
+  ticker: string;
+  loadings: FactorLoadings;
+  sectorEtf: string;
+}) {
+  const r2Pct = (loadings.r_squared * 100).toFixed(1);
+  const alphaStr =
+    loadings.alpha >= 0
+      ? loadings.alpha.toFixed(6)
+      : `−${Math.abs(loadings.alpha).toFixed(6)}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-bold font-mono text-subtle">{ticker}</span>
+        <span className="text-xs text-muted">
+          R² ={" "}
+          <span
+            className={`font-mono font-semibold ${
+              loadings.r_squared >= 0.5 ? "text-subtle" : "text-amber-400"
+            }`}
+          >
+            {r2Pct}%
+          </span>
+          <span className="text-faint ml-1">variance explained by factors</span>
+        </span>
+      </div>
+
+      {/* Equation block */}
+      <div className="bg-surface rounded-lg px-4 py-3 font-mono text-xs overflow-x-auto whitespace-nowrap">
+        <span className="text-muted">R</span>
+        <sub className="text-muted">{ticker}</sub>
+        <span className="text-muted"> = </span>
+        <span className="text-subtle">{alphaStr}</span>
+        <span className="text-muted"> {coef(loadings.market, 3)}</span>
+        <span className="text-muted">&middot;R</span>
+        <sub className="text-muted">SPY</sub>
+        <span className="text-muted"> {coef(loadings.sector, 3)}</span>
+        <span className="text-muted">&middot;R</span>
+        <sub className="text-muted">{sectorEtf}</sub>
+        <span className="text-muted"> {coef(loadings.momentum, 6)}</span>
+        <span className="text-muted">&middot;R</span>
+        <sub className="text-muted">Mom</sub>
+        <span className="text-muted"> + </span>
+        <span className="text-primary font-semibold">ε</span>
+      </div>
+
+      {/* Loading table */}
+      <table className="w-full text-xs">
+        <tbody>
+          {[
+            { label: "Market β (SPY)", value: loadings.market.toFixed(4) },
+            { label: `Sector β (${sectorEtf})`, value: loadings.sector.toFixed(4) },
+            { label: "Momentum β", value: loadings.momentum.toFixed(6) },
+            { label: "Alpha (α)", value: loadings.alpha.toFixed(6) },
+          ].map(({ label, value }) => (
+            <tr key={label} className="border-t border-divider">
+              <td className="py-1.5 text-muted">{label}</td>
+              <td className="py-1.5 text-right font-mono text-subtle">{value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="text-xs text-faint">
+        ε is the idiosyncratic residual — {ticker}&apos;s daily move after stripping out what
+        market, sector, and momentum would predict. This is what you&apos;re trading.
+      </p>
+    </div>
+  );
+}
+
+function TradeRow({
+  action,
+  instrument,
+  weight,
+  reason,
+}: {
+  action: "Long" | "Short";
+  instrument: string;
+  weight: string;
+  reason: string;
+}) {
   return (
     <tr className="border-t border-divider">
-      <td className="py-1.5 pr-4 text-xs text-muted whitespace-nowrap">{label}</td>
-      <td className="py-1.5 text-xs font-mono text-subtle">{value}</td>
+      <td className="py-2 pr-3">
+        <span
+          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
+            action === "Long" ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+          }`}
+        >
+          {action}
+        </span>
+      </td>
+      <td className="py-2 pr-4 font-mono text-xs font-semibold text-subtle">{instrument}</td>
+      <td className="py-2 pr-4 font-mono text-xs text-subtle">{weight}</td>
+      <td className="py-2 text-xs text-muted">{reason}</td>
     </tr>
   );
 }
 
-function Badge({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
-  return (
-    <span
-      className={`inline-block px-2 py-0.5 text-xs font-semibold rounded ${
-        ok ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
-      }`}
-    >
-      {ok ? yes : no}
-    </span>
-  );
-}
-
 export default function FactorPage() {
-  const [ticker1, setTicker1] = useState("KO");
-  const [ticker2, setTicker2] = useState("PEP");
-  const [sectorEtf, setSectorEtf] = useState("XLP");
+  const [ticker, setTicker] = useState("AAPL");
+  const [sectorEtf, setSectorEtf] = useState("XLK");
   const [lookbackDays, setLookbackDays] = useState(730);
   const [zscoreWindow, setZscoreWindow] = useState(30);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-  const [result, setResult] = useState<FactorAnalysisResult | null>(null);
+  const [result, setResult] = useState<FactorStockResult | null>(null);
 
   function addLog(entry: LogEntry) {
     setLogEntries((prev) => [...prev, entry]);
   }
 
   async function run() {
-    if (!ticker1 || !ticker2) return;
+    if (!ticker) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setLogEntries([]);
 
     try {
-      const res = await fetch(`${API}/api/factor-analyze/stream`, {
+      const res = await fetch(`${API}/api/factor-stock/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ticker1: ticker1.toUpperCase(),
-          ticker2: ticker2.toUpperCase(),
+          ticker: ticker.toUpperCase(),
           sector_etf: sectorEtf,
           lookback_days: lookbackDays,
           zscore_window: zscoreWindow,
@@ -117,38 +214,32 @@ export default function FactorPage() {
                 text: `Fetching  ${(event.tickers as string[]).join(" · ")}`,
               });
               break;
-
             case "step":
               addLog({ kind: event.kind as LogEntry["kind"], text: event.text as string });
               break;
-
             case "regression": {
-              const t = event.ticker as string;
               const r2 = (event.r_squared as number) * 100;
               addLog({
                 kind: "pass",
-                text: t,
+                text: event.ticker as string,
                 detail: `R² ${r2.toFixed(1)}%  β_mkt ${(event.market as number).toFixed(3)}  β_sec ${(event.sector as number).toFixed(3)}  β_mom ${(event.momentum as number).toFixed(3)}`,
               });
               break;
             }
-
             case "adf_result": {
               const pv = event.p_value as number;
               const stationary = event.is_stationary as boolean;
               addLog({
                 kind: stationary ? "pass" : "fail",
-                text: `Residual spread ADF`,
+                text: "Residual ADF",
                 detail: `p = ${pv.toFixed(4)}  ${stationary ? "stationary ✓" : "non-stationary"}`,
               });
               break;
             }
-
             case "complete":
               addLog({ kind: "summary", text: "Analysis complete" });
-              setResult(event.result as FactorAnalysisResult);
+              setResult(event.result as FactorStockResult);
               break;
-
             case "error":
               throw new Error(event.message as string);
           }
@@ -161,54 +252,42 @@ export default function FactorPage() {
     }
   }
 
-  const l1 = result?.factor_loadings.ticker1;
-  const l2 = result?.factor_loadings.ticker2;
+  const loadings = result?.factor_loadings;
+  const z = result?.current_zscore ?? null;
+  const signalLabel =
+    z === null ? null : z < -2 ? "BUY ε" : z > 2 ? "SELL ε" : "FLAT";
 
   return (
     <div className="max-w-screen-xl mx-auto px-4 py-8 space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-subtle">Factor Pairs Analysis</h1>
+        <h1 className="text-lg font-semibold text-subtle">Factor Analysis</h1>
         <p className="text-xs text-faint mt-1">
-          3-factor model: market (SPY) · sector ETF · momentum. Tests if the factor-neutral residual spread mean-reverts.
+          Decompose a stock&apos;s returns into systematic factor exposures, then trade the
+          idiosyncratic residual — the gap between what the stock does and what its factors predict.
         </p>
       </div>
 
       {/* Inputs */}
-      <Card title="Pair &amp; Parameters">
+      <Card title="Parameters">
         <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={ticker1}
-                onChange={(e) => setTicker1(e.target.value.toUpperCase())}
-                placeholder="KO"
-                maxLength={10}
-                className="w-24 border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-base font-mono font-semibold uppercase tracking-widest placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <span className="text-sm font-medium text-muted select-none">vs</span>
-              <input
-                type="text"
-                value={ticker2}
-                onChange={(e) => setTicker2(e.target.value.toUpperCase())}
-                placeholder="PEP"
-                maxLength={10}
-                className="w-24 border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-base font-mono font-semibold uppercase tracking-widest placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-            </div>
+            <input
+              type="text"
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value.toUpperCase())}
+              placeholder="AAPL"
+              maxLength={10}
+              className="w-28 border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-base font-mono font-semibold uppercase tracking-widest placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-primary"
+            />
 
             <div className="flex items-center gap-2">
               <label className="label">Sector ETF</label>
-              <Select
-                value={sectorEtf}
-                onChange={setSectorEtf}
-                options={SECTOR_ETFS}
-              />
+              <Select value={sectorEtf} onChange={setSectorEtf} options={SECTOR_ETFS} />
             </div>
 
             <button
               onClick={run}
-              disabled={loading || !ticker1 || !ticker2}
+              disabled={loading || !ticker}
               className="px-5 py-2 bg-primary text-subtle text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
             >
               {loading ? "Analyzing…" : "Run Analysis"}
@@ -228,7 +307,8 @@ export default function FactorPage() {
                 className="w-full accent-primary"
               />
               <div className="flex justify-between text-xs text-faint mt-0.5">
-                <span>1 yr</span><span>5 yr</span>
+                <span>1 yr</span>
+                <span>5 yr</span>
               </div>
             </div>
 
@@ -244,13 +324,14 @@ export default function FactorPage() {
                 className="w-full accent-primary"
               />
               <div className="flex justify-between text-xs text-faint mt-0.5">
-                <span>10</span><span>120</span>
+                <span>10</span>
+                <span>120</span>
               </div>
             </div>
           </div>
 
           <p className="text-xs text-faint">
-            Momentum factor: SPY 12-minus-1-month return. Minimum 1-year lookback required for momentum warmup.
+            Momentum factor: SPY 12-minus-1-month return. Minimum 1-year lookback required.
           </p>
         </div>
       </Card>
@@ -261,111 +342,160 @@ export default function FactorPage() {
         </div>
       )}
 
-      {/* Progress log */}
-      {logEntries.length > 0 && (
-        <ScanProgress entries={logEntries} scanning={loading} />
-      )}
+      {logEntries.length > 0 && <ScanProgress entries={logEntries} scanning={loading} />}
 
-      {result && (
+      {result && loadings && (
         <>
-          {/* Factor Loadings */}
-          <Card title="Factor Loadings">
-            <div className="overflow-x-auto">
+          {/* ── Step 1: Factor model ── */}
+          <Card title="Step 1 — Factor Model Fit">
+            <RegressionCard
+              ticker={result.ticker}
+              loadings={loadings}
+              sectorEtf={result.sector_etf}
+            />
+          </Card>
+
+          {/* ── Step 2: Residual mean reversion ── */}
+          <div>
+            <p className="section-heading mb-3">Step 2 — Idiosyncratic Residual (ε)</p>
+            <div className="space-y-4">
+              {/* Verdict */}
+              <div
+                className={`rounded-xl px-5 py-4 border ${
+                  result.adf.is_stationary
+                    ? "bg-green-500/10 border-green-500/20"
+                    : "bg-red-500/10 border-red-500/20"
+                }`}
+              >
+                <div
+                  className={`text-base font-bold ${
+                    result.adf.is_stationary ? "text-green-400" : "text-red-400"
+                  }`}
+                >
+                  {result.adf.is_stationary ? "ε is Mean-Reverting" : "ε is Not Mean-Reverting"}
+                </div>
+                <div className="text-xs text-muted mt-0.5">
+                  ADF p-value = {result.adf.p_value.toFixed(4)}
+                  {!result.adf.is_stationary && (
+                    <span className="text-amber-400 ml-2">
+                      — residual may have a unit root; this ticker&apos;s idiosyncratic component
+                      doesn&apos;t revert
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Metric tiles */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Metric
+                  label="Half-Life"
+                  value={result.half_life !== null ? `${result.half_life}d` : "N/A"}
+                  sub={result.half_life !== null ? "expected reversion" : "residual diverging"}
+                />
+                <Metric
+                  label="Current Z-Score"
+                  value={result.current_zscore !== null ? result.current_zscore.toFixed(2) : "—"}
+                />
+                <Metric
+                  label="ADF Statistic"
+                  value={result.adf.test_statistic.toFixed(3)}
+                  sub={`5% critical: ${result.adf.critical_values["5%"].toFixed(3)}`}
+                />
+                <Metric
+                  label="Data Points"
+                  value={result.dates.length}
+                  sub={`${result.dates[0].slice(0, 7)} → ${result.dates[result.dates.length - 1].slice(0, 7)}`}
+                />
+              </div>
+
+              {/* Charts */}
+              <Card>
+                <ResidualStockChart data={result} zscoreWindow={zscoreWindow} />
+              </Card>
+            </div>
+          </div>
+
+          {/* ── Step 3: Trade construction ── */}
+          <Card title="Step 3 — Factor-Neutral Trade Construction">
+            <p className="text-xs text-muted mb-1">
+              You&apos;re not trading {result.ticker} — you&apos;re trading ε, the gap between what
+              it does and what its factors predict. To isolate ε, you must hedge out the systematic
+              exposures simultaneously.
+            </p>
+            <p className="text-xs text-faint mb-5">
+              Table below shows the portfolio for going{" "}
+              <span className="text-subtle">long</span> ε (z-score unusually low → stock is cheap
+              vs. its factors → expect upward reversion). Reverse all signs to short ε.
+            </p>
+
+            <div className="overflow-x-auto mb-5">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-divider">
-                    <th className="pb-2 text-left label">Ticker</th>
-                    <th className="pb-2 text-right label">β Market</th>
-                    <th className="pb-2 text-right label">β Sector</th>
-                    <th className="pb-2 text-right label">β Momentum</th>
-                    <th className="pb-2 text-right label">α</th>
-                    <th className="pb-2 text-right label">R²</th>
+                    <th className="pb-2 text-left label">Action</th>
+                    <th className="pb-2 text-left label">Instrument</th>
+                    <th className="pb-2 text-left label">Weight</th>
+                    <th className="pb-2 text-left label">Why</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {([{ ticker: result.ticker1, l: l1 }, { ticker: result.ticker2, l: l2 }]).map(
-                    ({ ticker, l }) =>
-                      l ? (
-                        <tr key={ticker} className="border-t border-divider">
-                          <td className="py-2 font-mono font-semibold text-subtle">{ticker}</td>
-                          <td className="py-2 text-right font-mono text-subtle">{l.market.toFixed(4)}</td>
-                          <td className="py-2 text-right font-mono text-subtle">{l.sector.toFixed(4)}</td>
-                          <td className="py-2 text-right font-mono text-subtle">{l.momentum.toFixed(4)}</td>
-                          <td className="py-2 text-right font-mono text-subtle">{l.alpha.toFixed(6)}</td>
-                          <td className="py-2 text-right font-mono text-subtle">{(l.r_squared * 100).toFixed(1)}%</td>
-                        </tr>
-                      ) : null
-                  )}
+                  <TradeRow
+                    action="Long"
+                    instrument={result.ticker}
+                    weight="+1"
+                    reason="Direct long on the idiosyncratic residual ε"
+                  />
+                  <TradeRow
+                    action={loadings.market >= 0 ? "Short" : "Long"}
+                    instrument="SPY"
+                    weight={`${loadings.market < 0 ? "+" : "−"}${Math.abs(loadings.market).toFixed(4)}`}
+                    reason={`Cancel market β = ${loadings.market.toFixed(4)} — kills systematic market exposure`}
+                  />
+                  <TradeRow
+                    action={loadings.sector >= 0 ? "Short" : "Long"}
+                    instrument={result.sector_etf}
+                    weight={`${loadings.sector < 0 ? "+" : "−"}${Math.abs(loadings.sector).toFixed(4)}`}
+                    reason={`Cancel sector β = ${loadings.sector.toFixed(4)} — kills ${result.sector_etf} sector exposure`}
+                  />
                 </tbody>
               </table>
             </div>
-            <p className="text-xs text-faint mt-3">
-              Factors: SPY (market) · {sectorEtf} (sector) · SPY 12-1mo momentum. R² = fraction of return variance explained by factors.
-            </p>
-          </Card>
 
-          {/* Cointegration stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Card title="Residual Spread — ADF Test">
+            <p className="text-xs text-faint mb-5">
+              Momentum is a derived signal, not a tradeable asset — residual momentum exposure is
+              accepted. Alpha (α) is a constant and doesn&apos;t create factor risk.
+            </p>
+
+            {/* Current signal */}
+            {z !== null && (
               <div
-                className={`rounded-lg p-3 text-center mb-4 ${
-                  result.adf.is_stationary
-                    ? "bg-green-500/10 border border-green-500/20"
-                    : "bg-red-500/10 border border-red-500/20"
+                className={`rounded-lg px-4 py-4 border ${
+                  signalLabel === "BUY ε"
+                    ? "bg-green-500/10 border-green-500/20"
+                    : signalLabel === "SELL ε"
+                    ? "bg-red-500/10 border-red-500/20"
+                    : "bg-surface border-divider"
                 }`}
               >
-                <div className={`text-base font-bold ${result.adf.is_stationary ? "text-green-400" : "text-red-400"}`}>
-                  {result.adf.is_stationary ? "Mean-Reverting" : "Not Mean-Reverting"}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted">Current signal</span>
+                  <span
+                    className={`text-sm font-bold font-mono ${
+                      signalLabel === "BUY ε"
+                        ? "text-green-400"
+                        : signalLabel === "SELL ε"
+                        ? "text-red-400"
+                        : "text-muted"
+                    }`}
+                  >
+                    {signalLabel}
+                  </span>
                 </div>
-                <div className="text-xs text-muted mt-0.5">
-                  Residual spread — hedge ratio β = {result.hedge_ratio}
+                <div className="text-xs text-faint mt-1">
+                  z = {z.toFixed(3)} · Entry threshold: ±2σ (typical)
                 </div>
               </div>
-              <table className="w-full">
-                <tbody>
-                  <Row label="Test statistic" value={result.adf.test_statistic.toFixed(4)} />
-                  <Row label="p-value" value={result.adf.p_value.toFixed(4)} />
-                  <Row label="Critical 1%" value={result.adf.critical_values["1%"].toFixed(4)} />
-                  <Row label="Critical 5%" value={result.adf.critical_values["5%"].toFixed(4)} />
-                  <Row
-                    label="Result"
-                    value={<Badge ok={result.adf.is_stationary} yes="Stationary" no="Non-stationary" />}
-                  />
-                </tbody>
-              </table>
-            </Card>
-
-            <Card title="Mean Reversion Stats">
-              <table className="w-full">
-                <tbody>
-                  <Row
-                    label="Half-life"
-                    value={
-                      result.half_life !== null
-                        ? `${result.half_life} days`
-                        : <span className="text-faint">N/A — spread diverging</span>
-                    }
-                  />
-                  <Row
-                    label="Current z-score"
-                    value={result.current_zscore !== null ? result.current_zscore.toFixed(3) : "—"}
-                  />
-                  <Row label="Data points" value={result.dates.length} />
-                  <Row label="Window start" value={result.dates[0]} />
-                  <Row label="Window end" value={result.dates[result.dates.length - 1]} />
-                </tbody>
-              </table>
-              {!result.adf.is_stationary && (
-                <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded p-3 mt-4">
-                  The factor-neutral residual spread is not stationary. The pair may not have a genuine idiosyncratic relationship beyond common factor exposure.
-                </p>
-              )}
-            </Card>
-          </div>
-
-          {/* Charts */}
-          <Card title="Residual Spread &amp; Z-Score">
-            <ResidualSpreadChart data={result} />
+            )}
           </Card>
         </>
       )}

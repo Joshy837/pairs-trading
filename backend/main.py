@@ -11,12 +11,14 @@ from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
 from cointegration import analyze_pair, scan_pair
-from data import fetch_benchmark, fetch_factor_prices, fetch_prices, fetch_prices_batch, fetch_sectors
+from data import fetch_benchmark, fetch_factor_prices, fetch_factor_stock_prices, fetch_prices, fetch_prices_batch, fetch_sectors
 from factor import (
     analyze_factor_pair,
+    analyze_factor_stock,
     compute_spread_stats,
     fit_factor_model,
     prepare_aligned_returns,
+    prepare_aligned_returns_single,
 )
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
@@ -268,6 +270,98 @@ def scan_stream(req: ScanRequest) -> StreamingResponse:
             yield _event({"type": "error", "message": str(exc)})
         except Exception as exc:
             yield _event({"type": "error", "message": f"Scan failed: {exc}"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class FactorStockRequest(BaseModel):
+    ticker: str = Field(..., min_length=1, max_length=10)
+    sector_etf: str = Field(default="XLK", min_length=2, max_length=5)
+    lookback_days: int = Field(default=730, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "FactorStockRequest":
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        if self.sector_etf.upper() not in SECTOR_ETFS:
+            raise ValueError(f"sector_etf must be one of: {', '.join(sorted(SECTOR_ETFS))}.")
+        return self
+
+
+@app.post("/api/factor-stock/stream")
+def factor_stock_stream(req: FactorStockRequest) -> StreamingResponse:
+    """
+    SSE stream for single-stock 3-factor analysis.
+
+    Fits R_ticker = α + β_mkt·R_SPY + β_sec·R_sector + β_mom·R_mom + ε,
+    then tests whether ε mean-reverts and returns its rolling z-score.
+
+    Events (JSON in data: field):
+      fetching    — {tickers}
+      step        — {text, kind}
+      regression  — {ticker, r_squared, market, sector, momentum}
+      adf_result  — {p_value, is_stationary}
+      complete    — full FactorStockResult
+      error       — {message}
+    """
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def generate():
+        try:
+            tickers = [req.ticker.upper(), "SPY", req.sector_etf.upper()]
+            yield _event({"type": "fetching", "tickers": tickers})
+
+            price, spy, sector = fetch_factor_stock_prices(
+                req.ticker, req.sector_etf, req.lookback_days
+            )
+            yield _event({
+                "type": "step",
+                "text": f"Downloaded {len(price)} trading days  ({price.index[0].strftime('%Y-%m-%d')} → {price.index[-1].strftime('%Y-%m-%d')})",
+                "kind": "info",
+            })
+
+            yield _event({"type": "step", "text": "Computing factor returns + SPY momentum", "kind": "info"})
+            returns = prepare_aligned_returns_single(price, spy, sector, req.zscore_window)
+            yield _event({
+                "type": "step",
+                "text": f"{len(returns)} observations after momentum warmup",
+                "kind": "info",
+            })
+
+            yield _event({"type": "step", "text": f"Regressing {req.ticker.upper()} on 3 factors", "kind": "info"})
+            _, resid, loadings = fit_factor_model(returns, "p1")
+            yield _event({
+                "type": "regression",
+                "ticker": req.ticker.upper(),
+                "r_squared": loadings["r_squared"],
+                "market": loadings["market"],
+                "sector": loadings["sector"],
+                "momentum": loadings["momentum"],
+            })
+
+            yield _event({"type": "step", "text": "Running ADF test on residual ε", "kind": "info"})
+            result = analyze_factor_stock(price, spy, sector, req.zscore_window, req.ticker, req.sector_etf)
+            yield _event({
+                "type": "adf_result",
+                "p_value": result["adf"]["p_value"],
+                "is_stationary": result["adf"]["is_stationary"],
+            })
+
+            yield _event({"type": "complete", "result": result})
+
+        except ValueError as exc:
+            yield _event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            yield _event({"type": "error", "message": f"Factor analysis failed: {exc}"})
 
     return StreamingResponse(
         generate(),

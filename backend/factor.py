@@ -137,8 +137,78 @@ def compute_spread_stats(
         "hedge_ratio": round(hedge_ratio, 4),
         "spread": _to_json_list(spread),
         "zscore": _to_json_list(zscore),
+        "resid1": _to_json_list(resid1),
+        "resid2": _to_json_list(resid2),
         "dates": spread.index.strftime("%Y-%m-%d").tolist(),
         "adf": adf,
+        "half_life": round(hl, 1) if hl is not None else None,
+        "current_zscore": round(current_z, 3) if current_z is not None else None,
+    }
+
+
+def prepare_aligned_returns_single(
+    price: pd.Series,
+    spy: pd.Series,
+    sector: pd.Series,
+    zscore_window: int,
+) -> pd.DataFrame:
+    """
+    Align a single stock's prices with SPY and sector ETF, compute daily returns,
+    and add the SPY momentum factor.
+
+    Returns a DataFrame with columns [p1, spy, sector, momentum].
+    """
+    all_prices = pd.concat(
+        [price.rename("p1"), spy.rename("spy"), sector.rename("sector")],
+        axis=1,
+    ).dropna()
+
+    returns = all_prices.pct_change()
+    returns["momentum"] = all_prices["spy"].pct_change(231).shift(21)
+    returns = returns.dropna()
+
+    min_obs = max(60, zscore_window * 3)
+    if len(returns) < min_obs:
+        raise ValueError(
+            f"Only {len(returns)} observations after computing the momentum factor. "
+            "Use a longer lookback window (try 730+ days)."
+        )
+
+    return returns
+
+
+def analyze_factor_stock(
+    price: pd.Series,
+    spy: pd.Series,
+    sector: pd.Series,
+    zscore_window: int,
+    ticker: str,
+    sector_etf: str,
+) -> dict:
+    """
+    Single-stock 3-factor decomposition.
+
+    Fits R_ticker = α + β_mkt·R_SPY + β_sec·R_sector + β_mom·R_mom + ε and
+    tests whether ε mean-reverts (ADF) and computes its rolling z-score.
+    """
+    returns = prepare_aligned_returns_single(price, spy, sector, zscore_window)
+    _, resid, loadings = fit_factor_model(returns, "p1")
+
+    zscore_series = rolling_zscore(resid, zscore_window)
+    adf_result = run_adf(resid)
+    hl = half_life(resid)
+
+    valid_z = zscore_series.dropna()
+    current_z = float(valid_z.iloc[-1]) if not valid_z.empty else None
+
+    return {
+        "ticker": ticker.upper(),
+        "sector_etf": sector_etf.upper(),
+        "factor_loadings": loadings,
+        "residual": _to_json_list(resid),
+        "zscore": _to_json_list(zscore_series),
+        "dates": resid.index.strftime("%Y-%m-%d").tolist(),
+        "adf": adf_result,
         "half_life": round(hl, 1) if hl is not None else None,
         "current_zscore": round(current_z, 3) if current_z is not None else None,
     }

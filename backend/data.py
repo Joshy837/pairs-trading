@@ -184,6 +184,54 @@ def fetch_factor_prices(
     return prices[t1], prices[t2], prices["SPY"], prices[sector]
 
 
+def fetch_factor_stock_prices(
+    ticker: str,
+    sector_etf: str,
+    lookback_days: int,
+) -> "tuple[pd.Series, pd.Series, pd.Series]":
+    """
+    Fetch a single stock + SPY + sector ETF for single-stock 3-factor analysis.
+
+    Fetches lookback_days + 300 extra days so the 12-month momentum factor
+    can be computed over the full analysis window.
+    Returns (price, spy, sector) as aligned Series.
+    """
+    t, sector = ticker.upper(), sector_etf.upper()
+    end = datetime.today()
+    start = end - timedelta(days=lookback_days + 300)
+
+    tickers_list = [t, "SPY", sector]
+    raw = yf.download(
+        tickers_list,
+        start=start.strftime("%Y-%m-%d"),
+        end=end.strftime("%Y-%m-%d"),
+        auto_adjust=True,
+        progress=False,
+    )
+
+    if raw.empty:
+        raise ValueError("No data returned. Check that all ticker symbols are valid.")
+
+    if isinstance(raw.columns, pd.MultiIndex):
+        prices = raw["Close"]
+    else:
+        raise ValueError("Unexpected data format from yfinance.")
+
+    for sym in tickers_list:
+        if sym not in prices.columns:
+            raise ValueError(f"Ticker '{sym}' not found — check the symbol and try again.")
+
+    prices = prices[[t, "SPY", sector]].dropna()
+
+    if len(prices) < 60:
+        raise ValueError(
+            f"Only {len(prices)} trading days available. "
+            "Use a larger lookback window or choose a ticker with more history."
+        )
+
+    return prices[t], prices["SPY"], prices[sector]
+
+
 def fetch_sectors(tickers: list[str]) -> "dict[str, str | None]":
     """
     Fetch GICS sector for each ticker using yfinance.

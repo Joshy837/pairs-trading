@@ -108,7 +108,21 @@ export interface FactorAnalysisResult {
   current_zscore: number | null;
   spread: (number | null)[];
   zscore: (number | null)[];
+  resid1: (number | null)[];
+  resid2: (number | null)[];
   dates: string[];
+}
+
+export interface FactorStockResult {
+  ticker: string;
+  sector_etf: string;
+  factor_loadings: FactorLoadings;
+  residual: (number | null)[];
+  zscore: (number | null)[];
+  dates: string[];
+  adf: ADFResult;
+  half_life: number | null;
+  current_zscore: number | null;
 }
 
 export interface LogEntry {

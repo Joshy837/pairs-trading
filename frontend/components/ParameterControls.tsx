@@ -238,6 +238,37 @@ export default function ParameterControls({ params, onChange }: Props) {
         </span>
       </div>
 
+      <div className="flex items-center gap-3">
+        <span className="label">Vol Targeting</span>
+        <div className="flex items-center rounded-md border border-divider overflow-hidden">
+          <button
+            onClick={() => onChange({ ...params, use_vol_target: false })}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              !params.use_vol_target
+                ? "bg-primary text-subtle"
+                : "bg-surface text-muted hover:text-subtle"
+            }`}
+          >
+            Off
+          </button>
+          <button
+            onClick={() => onChange({ ...params, use_vol_target: true })}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              params.use_vol_target
+                ? "bg-primary text-subtle"
+                : "bg-surface text-muted hover:text-subtle"
+            }`}
+          >
+            On
+          </button>
+        </div>
+        <span className="text-xs text-faint">
+          {params.use_vol_target
+            ? "Position scaled to 1% daily vol target (20-day realized vol, 3× leverage cap)"
+            : "Full position each trade — no risk-adjusted sizing"}
+        </span>
+      </div>
+
       <div className="flex items-center gap-3 flex-wrap">
         <span className="label">Max Hold Period</span>
         <div className="flex items-center rounded-md border border-divider overflow-hidden">

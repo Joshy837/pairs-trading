@@ -24,6 +24,7 @@ const DEFAULT_PARAMS: Parameters = {
   use_kalman: false,
   use_regime: false,
   use_log_prices: false,
+  use_vol_target: false,
   max_hold_mode: "off",
   max_holding_days: 30,
   halflife_multiplier: 2,
@@ -226,7 +227,7 @@ export default function Page() {
             {/* Trade log */}
             {backtest.trades.length > 0 && (
               <Card title="Trade Log">
-                <TradeLog trades={backtest.trades} />
+                <TradeLog trades={backtest.trades} showPositionSize={params.use_vol_target} />
               </Card>
             )}
           </div>

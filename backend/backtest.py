@@ -63,6 +63,7 @@ def run_backtest(
     max_holding_days: "int | None" = None,
     use_halflife_hold: bool = False,
     halflife_multiplier: float = 2.0,
+    use_vol_target: bool = False,
     spy: "pd.Series | None" = None,
 ) -> dict:
     """
@@ -131,6 +132,14 @@ def run_backtest(
     if use_regime:
         regime = detect_regimes(spread, insample_cutoff)
 
+    # Volatility targeting: scale position so expected daily vol ≈ 1%
+    # Uses 20-day realized vol of spread returns; capped at 3× to prevent excessive leverage
+    if use_vol_target:
+        realized_vol = spread_returns.rolling(20).std()
+        vol_scalar = (0.01 / realized_vol).clip(upper=3.0).fillna(1.0)
+    else:
+        vol_scalar = pd.Series(1.0, index=price1.index)
+
     # --- Signal generation (out-of-sample only) ---
     position = pd.Series(0.0, index=price1.index)
     current_pos = 0.0
@@ -159,6 +168,7 @@ def run_backtest(
                     "date": price1.index[i].strftime("%Y-%m-%d"),
                     "type": "short",
                     "entry_z": round(z, 3),
+                    "position_size": round(float(vol_scalar.iloc[i]), 4),
                     "stop_triggered": False,
                     "max_hold_triggered": False,
                 })
@@ -169,6 +179,7 @@ def run_backtest(
                     "date": price1.index[i].strftime("%Y-%m-%d"),
                     "type": "long",
                     "entry_z": round(z, 3),
+                    "position_size": round(float(vol_scalar.iloc[i]), 4),
                     "stop_triggered": False,
                     "max_hold_triggered": False,
                 })
@@ -198,6 +209,9 @@ def run_backtest(
                 entry_day = None
 
         position.iloc[i] = current_pos
+
+    # Apply vol scalar to position series before lagging
+    position = position * vol_scalar
 
     # Lag position by 1 day: signal at close T → position held T+1
     pos_shifted = position.shift(1).fillna(0)

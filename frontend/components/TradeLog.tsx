@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Trade } from "@/types";
 
-type SortKey = "date" | "type" | "entry_z" | "exit_date" | "exit_z" | "pnl" | "duration";
+type SortKey = "date" | "type" | "entry_z" | "position_size" | "exit_date" | "exit_z" | "pnl" | "duration";
 type SortDir = "asc" | "desc";
 
 function tradeDuration(t: Trade): number {
@@ -11,8 +11,8 @@ function tradeDuration(t: Trade): number {
   return new Date(t.exit_date).getTime() - new Date(t.date).getTime();
 }
 
-function exportCSV(trades: Trade[]) {
-  const headers = ["Entry Date", "Direction", "Entry Z", "Exit Date", "Exit Z", "P&L", "Duration (days)", "Exit Reason"];
+function exportCSV(trades: Trade[], showSize: boolean) {
+  const headers = ["Entry Date", "Direction", "Entry Z", ...(showSize ? ["Size"] : []), "Exit Date", "Exit Z", "P&L", "Duration (days)", "Exit Reason"];
   const rows = trades.map((t) => {
     const days = t.exit_date ? Math.round(tradeDuration(t) / 86400000) : "";
     const pnl =
@@ -20,7 +20,8 @@ function exportCSV(trades: Trade[]) {
         ? ((t.pnl as number) * 100).toFixed(2) + "%"
         : "";
     const reason = t.stop_triggered ? "STOP" : t.max_hold_triggered ? "MAX HOLD" : "—";
-    return [t.date, t.type, t.entry_z, t.exit_date ?? "", t.exit_z ?? "", pnl, days, reason];
+    const sizeCol = showSize ? [t.position_size !== undefined ? t.position_size.toFixed(2) + "×" : ""] : [];
+    return [t.date, t.type, t.entry_z, ...sizeCol, t.exit_date ?? "", t.exit_z ?? "", pnl, days, reason];
   });
   const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -34,9 +35,10 @@ function exportCSV(trades: Trade[]) {
 
 interface Props {
   trades: Trade[];
+  showPositionSize?: boolean;
 }
 
-export default function TradeLog({ trades }: Props) {
+export default function TradeLog({ trades, showPositionSize = false }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -60,6 +62,9 @@ export default function TradeLog({ trades }: Props) {
       } else if (sortKey === "pnl") {
         av = a.pnl ?? -Infinity;
         bv = b.pnl ?? -Infinity;
+      } else if (sortKey === "position_size") {
+        av = a.position_size ?? 0;
+        bv = b.position_size ?? 0;
       } else {
         av = a[sortKey as keyof Trade] as string | number | undefined;
         bv = b[sortKey as keyof Trade] as string | number | undefined;
@@ -94,7 +99,7 @@ export default function TradeLog({ trades }: Props) {
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted">{trades.length} trades</p>
         <button
-          onClick={() => exportCSV(sorted)}
+          onClick={() => exportCSV(sorted, showPositionSize)}
           className="text-xs px-3 py-1.5 rounded-md border border-divider text-muted hover:text-subtle hover:border-primary transition-colors"
         >
           Export CSV
@@ -108,6 +113,7 @@ export default function TradeLog({ trades }: Props) {
               <Th col="date" label="Entry Date" />
               <Th col="type" label="Direction" />
               <Th col="entry_z" label="Entry Z" />
+              {showPositionSize && <Th col="position_size" label="Size" />}
               <Th col="exit_date" label="Exit Date" />
               <Th col="exit_z" label="Exit Z" />
               <Th col="pnl" label="P&L" />
@@ -132,6 +138,11 @@ export default function TradeLog({ trades }: Props) {
                     </span>
                   </td>
                   <td className="py-1.5 pr-4 font-mono text-muted">{t.entry_z}</td>
+                  {showPositionSize && (
+                    <td className="py-1.5 pr-4 font-mono text-muted">
+                      {t.position_size !== undefined ? `${t.position_size.toFixed(2)}×` : "—"}
+                    </td>
+                  )}
                   <td className="py-1.5 pr-4 font-mono text-muted">{t.exit_date ?? "—"}</td>
                   <td className="py-1.5 pr-4 font-mono">
                     {t.exit_z !== undefined ? (

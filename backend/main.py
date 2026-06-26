@@ -59,6 +59,7 @@ class BacktestRequest(AnalyzeRequest):
     insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
     use_kalman: bool = Field(default=False)
     use_regime: bool = Field(default=False)
+    use_vol_target: bool = Field(default=False)
     max_holding_days: Optional[int] = Field(default=None, ge=5, le=200)
     use_halflife_hold: bool = Field(default=False)
     halflife_multiplier: float = Field(default=2.0, ge=0.5, le=2.0)
@@ -557,6 +558,7 @@ def backtest(req: BacktestRequest) -> dict:
             max_holding_days=req.max_holding_days,
             use_halflife_hold=req.use_halflife_hold,
             halflife_multiplier=req.halflife_multiplier,
+            use_vol_target=req.use_vol_target,
             spy=spy,
         )
     except ValueError as exc:

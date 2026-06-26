@@ -29,6 +29,7 @@ export interface Trade {
   date: string;
   type: "long" | "short";
   entry_z: number;
+  position_size?: number;
   exit_date?: string;
   exit_z?: number;
   stop_triggered?: boolean;
@@ -72,6 +73,7 @@ export interface Parameters {
   use_kalman: boolean;
   use_regime: boolean;
   use_log_prices: boolean;
+  use_vol_target: boolean;
   max_hold_mode: "off" | "auto" | "custom";
   max_holding_days: number; // only used when max_hold_mode === "custom"
   halflife_multiplier: number; // only used when max_hold_mode === "auto"

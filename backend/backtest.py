@@ -205,15 +205,56 @@ def run_backtest(
     oos_returns = portfolio_returns.iloc[insample_cutoff:]
     oos_equity = equity.iloc[insample_cutoff:]
 
+    # Extended trade metrics (completed trades only)
+    completed = [t for t in trades if t.get("pnl") is not None]
+    pnls = [t["pnl"] for t in completed]
+
+    win_rate = None
+    profit_factor = None
+    avg_trade_duration = None
+
+    if pnls:
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        win_rate = round(len(wins) / len(pnls), 4)
+        gross_profit = sum(wins)
+        gross_loss = abs(sum(losses))
+        if gross_loss > 0:
+            profit_factor = round(gross_profit / gross_loss, 3)
+        # gross_loss == 0 → all wins; leave profit_factor as None (frontend shows "∞")
+
+        durations = []
+        for t in completed:
+            ei = date_to_idx.get(t["date"])
+            xi = date_to_idx.get(t.get("exit_date", ""))
+            if ei is not None and xi is not None:
+                durations.append(xi - ei)
+        if durations:
+            avg_trade_duration = round(sum(durations) / len(durations))
+
+    # Calmar ratio: annualised return / |max drawdown|
+    total_return_val = float(oos_equity.iloc[-1] / 100 - 1)
+    max_dd_val = compute_max_drawdown(oos_equity)
+    oos_days = max(len(oos_returns), 1)
+    if total_return_val > -1:
+        annualized_return = float((1 + total_return_val) ** (252 / oos_days) - 1)
+    else:
+        annualized_return = -1.0
+    calmar_ratio = round(annualized_return / abs(max_dd_val), 3) if max_dd_val < 0 else None
+
     return {
         "equity_curve": equity_list,
         "dates": price1.index.strftime("%Y-%m-%d").tolist(),
         "trades": trades,
         "metrics": {
             "sharpe_ratio": round(compute_sharpe(oos_returns), 3),
-            "max_drawdown": round(compute_max_drawdown(oos_equity), 4),
-            "total_return": round(float(oos_equity.iloc[-1] / 100 - 1), 4),
+            "max_drawdown": round(max_dd_val, 4),
+            "total_return": round(total_return_val, 4),
             "num_trades": len(trades),
+            "win_rate": win_rate,
+            "avg_trade_duration": avg_trade_duration,
+            "profit_factor": profit_factor,
+            "calmar_ratio": calmar_ratio,
         },
         "spread": _to_json_list(spread),
         "zscore": _to_json_list(zscore),

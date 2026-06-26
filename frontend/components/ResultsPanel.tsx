@@ -30,9 +30,25 @@ function MetricBox({
 }
 
 export default function ResultsPanel({ metrics }: Props) {
-  const { sharpe_ratio, max_drawdown, total_return, num_trades } = metrics;
+  const {
+    sharpe_ratio,
+    calmar_ratio,
+    max_drawdown,
+    total_return,
+    num_trades,
+    win_rate,
+    avg_trade_duration,
+    profit_factor,
+  } = metrics;
 
   const fmtPct = (v: number) => `${(v * 100).toFixed(2)}%`;
+
+  const profitFactorDisplay =
+    profit_factor !== null
+      ? profit_factor.toFixed(2)
+      : win_rate !== null
+      ? "∞"
+      : "—";
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -42,9 +58,49 @@ export default function ResultsPanel({ metrics }: Props) {
         sub="annualised"
         positive={sharpe_ratio > 0}
       />
-      <MetricBox label="Max Drawdown" value={fmtPct(max_drawdown)} positive={max_drawdown > -0.1} />
-      <MetricBox label="Total Return" value={fmtPct(total_return)} positive={total_return > 0} />
-      <MetricBox label="# Trades" value={String(num_trades)} sub="round trips" />
+      <MetricBox
+        label="Calmar Ratio"
+        value={calmar_ratio !== null ? calmar_ratio.toFixed(2) : "—"}
+        sub="ann. return / max DD"
+        positive={calmar_ratio !== null ? calmar_ratio > 0 : undefined}
+      />
+      <MetricBox
+        label="Total Return"
+        value={fmtPct(total_return)}
+        positive={total_return > 0}
+      />
+      <MetricBox
+        label="Max Drawdown"
+        value={fmtPct(max_drawdown)}
+        positive={max_drawdown > -0.1}
+      />
+      <MetricBox
+        label="# Trades"
+        value={String(num_trades)}
+        sub="round trips"
+      />
+      <MetricBox
+        label="Win Rate"
+        value={win_rate !== null ? fmtPct(win_rate) : "—"}
+        positive={win_rate !== null ? win_rate >= 0.5 : undefined}
+      />
+      <MetricBox
+        label="Avg Duration"
+        value={avg_trade_duration !== null ? `${avg_trade_duration}d` : "—"}
+        sub="trading days"
+      />
+      <MetricBox
+        label="Profit Factor"
+        value={profitFactorDisplay}
+        sub="gross profit / loss"
+        positive={
+          profit_factor !== null
+            ? profit_factor > 1
+            : win_rate !== null
+            ? true
+            : undefined
+        }
+      />
     </div>
   );
 }

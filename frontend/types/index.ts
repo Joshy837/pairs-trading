@@ -39,6 +39,10 @@ export interface BacktestMetrics {
   max_drawdown: number;
   total_return: number;
   num_trades: number;
+  win_rate: number | null;
+  avg_trade_duration: number | null;
+  profit_factor: number | null;
+  calmar_ratio: number | null;
 }
 
 export interface BacktestResult {

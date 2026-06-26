@@ -62,6 +62,7 @@ def run_backtest(
     use_log_prices: bool = False,
     max_holding_days: "int | None" = None,
     use_halflife_hold: bool = False,
+    halflife_multiplier: float = 2.0,
     spy: "pd.Series | None" = None,
 ) -> dict:
     """
@@ -120,11 +121,10 @@ def run_backtest(
     # Z-score computed over the full period (rolling, no look-ahead)
     zscore = compute_zscore(spread, zscore_window)
 
-    # Auto half-life hold: 2× half-life gives ~75% expected reversion before forced exit
     if use_halflife_hold:
         hl = compute_half_life(spread.iloc[:insample_cutoff])
         if hl is not None and hl > 0:
-            max_holding_days = max(5, round(2 * hl))
+            max_holding_days = max(5, round(halflife_multiplier * hl))
 
     # Regime: fit HMM on in-sample spread, decode full series
     regime: list[int | None] | None = None

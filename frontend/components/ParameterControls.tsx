@@ -255,6 +255,22 @@ export default function ParameterControls({ params, onChange }: Props) {
             </button>
           ))}
         </div>
+        {params.max_hold_mode === "auto" && (
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={0.5}
+              max={2}
+              step={0.5}
+              value={params.halflife_multiplier}
+              onChange={(e) =>
+                onChange({ ...params, halflife_multiplier: Number(e.target.value) })
+              }
+              className="w-28 accent-primary"
+            />
+            <span className="text-xs font-mono text-subtle w-8">{params.halflife_multiplier}×</span>
+          </div>
+        )}
         {params.max_hold_mode === "custom" && (
           <div className="flex items-center gap-1">
             <input
@@ -274,7 +290,7 @@ export default function ParameterControls({ params, onChange }: Props) {
         )}
         <span className="text-xs text-faint">
           {params.max_hold_mode === "auto"
-            ? "Force close after 2× half-life (~75% reversion expected) — estimated on in-sample data"
+            ? `Force close after ${params.halflife_multiplier}× half-life — estimated on in-sample data`
             : params.max_hold_mode === "custom"
             ? `Force close after ${params.max_holding_days}d`
             : "No time limit — trades run until z-score reverts or stop-loss triggers"}

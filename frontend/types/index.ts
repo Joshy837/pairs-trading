@@ -74,6 +74,7 @@ export interface Parameters {
   use_log_prices: boolean;
   max_hold_mode: "off" | "auto" | "custom";
   max_holding_days: number; // only used when max_hold_mode === "custom"
+  halflife_multiplier: number; // only used when max_hold_mode === "auto"
 }
 
 export interface ScanPairResult {

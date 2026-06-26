@@ -26,6 +26,7 @@ const DEFAULT_PARAMS: Parameters = {
   use_log_prices: false,
   max_hold_mode: "off",
   max_holding_days: 30,
+  halflife_multiplier: 2,
 };
 
 const PRESET_PAIRS = [
@@ -67,7 +68,7 @@ export default function Page() {
     setBacktest(null);
     setLoading(true);
 
-    const { max_hold_mode, max_holding_days: customMaxHold, ...restParams } = params;
+    const { max_hold_mode, max_holding_days: customMaxHold, halflife_multiplier, ...restParams } = params;
     const body = JSON.stringify({
       ticker1,
       ticker2,
@@ -75,6 +76,7 @@ export default function Page() {
       insample_pct: restParams.insample_pct / 100,
       max_holding_days: max_hold_mode === "custom" ? customMaxHold : null,
       use_halflife_hold: max_hold_mode === "auto",
+      halflife_multiplier: max_hold_mode === "auto" ? halflife_multiplier : 2,
     });
 
     try {
@@ -204,7 +206,7 @@ export default function Page() {
                   <p className="text-xs text-faint">
                     Max hold:{" "}
                     <span className="font-mono text-muted">{backtest.effective_max_hold}d</span>
-                    {params.max_hold_mode === "auto" && " (2× in-sample half-life)"}
+                    {params.max_hold_mode === "auto" && ` (${params.halflife_multiplier}× in-sample half-life)`}
                   </p>
                 )}
                 <div>

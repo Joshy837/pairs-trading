@@ -39,6 +39,7 @@ export default function ScannerPage() {
   const [lookbackDays, setLookbackDays] = useState(365);
   const [zscoreWindow, setZscoreWindow] = useState(30);
   const [corrThreshold, setCorrThreshold] = useState(0.5);
+  const [sectorFilter, setSectorFilter] = useState(false);
   const [qualityFilter, setQualityFilter] = useState<"all" | "stable">("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export default function ScannerPage() {
           lookback_days: lookbackDays,
           zscore_window: zscoreWindow,
           corr_threshold: corrThreshold,
+          sector_filter: sectorFilter,
         }),
       });
 
@@ -247,6 +249,19 @@ export default function ScannerPage() {
                   />
                   <span className="text-xs font-mono text-muted w-14">ρ ≥ {corrThreshold.toFixed(2)}</span>
                 </div>
+              </div>
+              <div className="space-y-1">
+                <p className="label">Sector Filter</p>
+                <button
+                  onClick={() => setSectorFilter((v) => !v)}
+                  className={`px-3 py-1 text-xs font-mono rounded-md border transition-colors ${
+                    sectorFilter
+                      ? "bg-primary/20 border-primary/40 text-primary"
+                      : "bg-surface border-divider text-muted hover:border-primary/40 hover:text-subtle"
+                  }`}
+                >
+                  {sectorFilter ? "Same sector only" : "All sectors"}
+                </button>
               </div>
             </div>
           </div>

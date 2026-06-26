@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ResidualSpreadChart from "@/components/ResidualSpreadChart";
 import ScanProgress from "@/components/ScanProgress";
+import Select from "@/components/Select";
 import { FactorAnalysisResult, LogEntry } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -198,15 +199,11 @@ export default function FactorPage() {
 
             <div className="flex items-center gap-2">
               <label className="label">Sector ETF</label>
-              <select
+              <Select
                 value={sectorEtf}
-                onChange={(e) => setSectorEtf(e.target.value)}
-                className="border border-divider bg-surface text-subtle rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {SECTOR_ETFS.map(({ value, label }) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
+                onChange={setSectorEtf}
+                options={SECTOR_ETFS}
+              />
             </div>
 
             <button

@@ -63,7 +63,7 @@ export default function SpreadChart({ data, entryZ, exitZ, stopZ, insampleEndDat
           <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="date" interval={interval} tick={CHART_AXIS} tickLine={false} />
-            <YAxis tick={CHART_AXIS} tickLine={false} width={60} />
+            <YAxis tick={CHART_AXIS} tickLine={false} width={60} domain={['auto', 'auto']} />
             <Tooltip
               formatter={(v: number) => [v?.toFixed(4), "Spread"]}
               labelStyle={{ fontSize: CHART_AXIS.fontSize }}

@@ -8,7 +8,7 @@ States
 
 Feature
 -------
-Rolling 20-day standard deviation of spread 1-day changes.
+Rolling 60-day standard deviation of spread 1-day changes.
 The mean-reverting state has systematically lower volatility.
 
 Algorithm
@@ -80,7 +80,7 @@ def _baum_welch(
     """
     mu = np.percentile(obs, [33, 67]).astype(float)
     sigma = np.array([obs.std(), obs.std()], dtype=float)
-    A = np.array([[0.92, 0.08], [0.08, 0.92]], dtype=float)
+    A = np.array([[0.98, 0.02], [0.02, 0.98]], dtype=float)
     pi = np.array([0.5, 0.5], dtype=float)
 
     for _ in range(n_iter):
@@ -147,7 +147,7 @@ def _viterbi(
 def detect_regimes(
     spread: pd.Series,
     insample_cutoff: int,
-    vol_window: int = 20,
+    vol_window: int = 60,
 ) -> list[int | None]:
     """
     Classify each day as mean-reverting (1) or trending (0) using a 2-state

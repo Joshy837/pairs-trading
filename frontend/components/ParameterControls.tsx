@@ -86,7 +86,7 @@ export default function ParameterControls({ params, onChange }: Props) {
         label="Lookback Window"
         value={params.lookback_days}
         min={90}
-        max={730}
+        max={1825}
         step={30}
         unit=" days"
         onChange={set("lookback_days")}

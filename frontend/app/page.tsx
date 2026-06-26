@@ -14,7 +14,7 @@ import { AnalysisResult, BacktestResult, Parameters } from "@/types";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const DEFAULT_PARAMS: Parameters = {
-  lookback_days: 365,
+  lookback_days: 730,
   zscore_window: 30,
   entry_z: 2.0,
   exit_z: 0.5,

@@ -655,7 +655,7 @@ export default function FactorPage() {
                 <>
                   <ResultsPanel metrics={btResult.metrics} />
                   <Card title="Equity Curve — ε Strategy (OOS)">
-                    <EquityCurve data={btResult} insampleEndDate={btResult.insample_end_date} />
+                    <EquityCurve data={btResult} />
                   </Card>
                 </>
               )}

@@ -199,7 +199,7 @@ export default function Page() {
                   <p className="text-xs font-medium text-muted mb-2">
                     Equity Curve (starts at $100)
                   </p>
-                  <EquityCurve data={backtest} insampleEndDate={backtest.insample_end_date} />
+                  <EquityCurve data={backtest} />
                 </div>
               </div>
             </Card>

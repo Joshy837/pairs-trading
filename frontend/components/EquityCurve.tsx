@@ -14,19 +14,20 @@ import { CHART_AXIS, CHART_COLORS } from "@/lib/tokens";
 
 interface Props {
   data: { dates: string[]; equity_curve: (number | null)[]; benchmark?: (number | null)[] | null };
-  insampleEndDate?: string;
 }
 
-export default function EquityCurve({ data, insampleEndDate }: Props) {
+export default function EquityCurve({ data }: Props) {
   const hasBenchmark = Array.isArray(data.benchmark);
 
-  const chartData = data.dates.map((date, i) => ({
-    date,
-    equity: data.equity_curve[i] != null ? Number(data.equity_curve[i]!.toFixed(2)) : undefined,
-    ...(hasBenchmark && {
-      benchmark: data.benchmark![i] != null ? Number(data.benchmark![i]!.toFixed(2)) : undefined,
-    }),
-  }));
+  const chartData = data.dates
+    .map((date, i) => ({
+      date,
+      equity: data.equity_curve[i] != null ? Number(data.equity_curve[i]!.toFixed(2)) : undefined,
+      ...(hasBenchmark && {
+        benchmark: data.benchmark![i] != null ? Number(data.benchmark![i]!.toFixed(2)) : undefined,
+      }),
+    }))
+    .filter((d) => d.equity !== undefined);
 
   const interval = Math.max(1, Math.floor(chartData.length / 7));
 
@@ -48,14 +49,6 @@ export default function EquityCurve({ data, insampleEndDate }: Props) {
           contentStyle={{ fontSize: CHART_AXIS.fontSize }}
         />
         <ReferenceLine y={100} stroke={CHART_COLORS.zero} strokeDasharray="4 3" />
-        {insampleEndDate && (
-          <ReferenceLine
-            x={insampleEndDate}
-            stroke={CHART_COLORS.zero}
-            strokeDasharray="6 3"
-            label={{ value: "OOS →", fill: "#9ca3af", fontSize: 9, position: "insideTopRight" }}
-          />
-        )}
         {hasBenchmark && (
           <Line
             type="monotone"

@@ -59,6 +59,7 @@ def run_backtest(
     insample_pct: float = 0.7,
     use_kalman: bool = False,
     use_regime: bool = False,
+    use_log_prices: bool = False,
     spy: "pd.Series | None" = None,
 ) -> dict:
     """
@@ -88,21 +89,30 @@ def run_backtest(
     insample_cutoff = max(zscore_window * 2, int(len(price1) * insample_pct))
     insample_cutoff = min(insample_cutoff, len(price1) - zscore_window)
 
-    ret1 = price1.pct_change()
-    ret2 = price2.pct_change()
+    # When using log prices, all spread/hedge computations operate on log(P).
+    # Spread returns become log returns (Δlog spread = log_ret1 − β·log_ret2).
+    if use_log_prices:
+        p1 = np.log(price1)
+        p2 = np.log(price2)
+        ret1 = p1.diff()
+        ret2 = p2.diff()
+    else:
+        p1, p2 = price1, price2
+        ret1 = price1.pct_change()
+        ret2 = price2.pct_change()
 
     if use_kalman:
         # Time-varying β: Kalman filter is causal, no lookahead bias
-        kalman_beta = compute_kalman_hedge(price1, price2)
-        spread = (price1 - kalman_beta * price2).rename("spread")
+        kalman_beta = compute_kalman_hedge(p1, p2)
+        spread = (p1 - kalman_beta * p2).rename("spread")
         hedge_ratio = float(kalman_beta.iloc[insample_cutoff - 1])  # β at in-sample end
         spread_returns = ret1 - kalman_beta * ret2
     else:
         # Static OLS β estimated on in-sample period only
         hedge_ratio = compute_hedge_ratio(
-            price1.iloc[:insample_cutoff], price2.iloc[:insample_cutoff]
+            p1.iloc[:insample_cutoff], p2.iloc[:insample_cutoff]
         )
-        spread = compute_spread(price1, price2, hedge_ratio)
+        spread = compute_spread(p1, p2, hedge_ratio)
         spread_returns = ret1 - hedge_ratio * ret2
 
     # Z-score computed over the full period (rolling, no look-ahead)

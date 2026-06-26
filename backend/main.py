@@ -29,6 +29,7 @@ class AnalyzeRequest(BaseModel):
     ticker2: str = Field(..., min_length=1, max_length=10)
     lookback_days: int = Field(default=365, ge=90, le=1825)
     zscore_window: int = Field(default=30, ge=10, le=120)
+    use_log_prices: bool = Field(default=False)
 
     @model_validator(mode="after")
     def check_lookback_sufficient(self) -> "AnalyzeRequest":
@@ -92,7 +93,7 @@ def analyze(req: AnalyzeRequest) -> dict:
     """
     try:
         p1, p2 = fetch_prices(req.ticker1, req.ticker2, req.lookback_days)
-        return analyze_pair(p1, p2, req.zscore_window)
+        return analyze_pair(p1, p2, req.zscore_window, req.use_log_prices)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -272,6 +273,7 @@ def backtest(req: BacktestRequest) -> dict:
             req.insample_pct,
             req.use_kalman,
             req.use_regime,
+            req.use_log_prices,
             spy=spy,
         )
     except ValueError as exc:

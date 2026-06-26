@@ -23,6 +23,7 @@ const DEFAULT_PARAMS: Parameters = {
   insample_pct: 70,
   use_kalman: false,
   use_regime: false,
+  use_log_prices: false,
 };
 
 const PRESET_PAIRS = [

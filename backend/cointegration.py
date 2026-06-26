@@ -240,23 +240,31 @@ def scan_pair(
     }
 
 
-def analyze_pair(price1: pd.Series, price2: pd.Series, zscore_window: int = 30) -> dict:
+def analyze_pair(
+    price1: pd.Series,
+    price2: pd.Series,
+    zscore_window: int = 30,
+    use_log_prices: bool = False,
+) -> dict:
     """
     Run full cointegration analysis and return all data needed by the frontend.
 
     Returns hedge ratio, ADF/Johansen results, and the spread + z-score time series.
     A pair is flagged as cointegrated if *either* test rejects the null.
     """
-    hedge_ratio = compute_hedge_ratio(price1, price2)
-    spread = compute_spread(price1, price2, hedge_ratio)
+    p1 = np.log(price1) if use_log_prices else price1
+    p2 = np.log(price2) if use_log_prices else price2
+
+    hedge_ratio = compute_hedge_ratio(p1, p2)
+    spread = compute_spread(p1, p2, hedge_ratio)
     zscore = compute_zscore(spread, zscore_window)
 
     adf = run_adf_test(spread)
-    johansen = run_johansen_test(price1, price2)
+    johansen = run_johansen_test(p1, p2)
 
     rolling_window = max(zscore_window * 3, 90)
-    rolling_hedge = compute_rolling_hedge(price1, price2, rolling_window)
-    kalman_hedge = compute_kalman_hedge(price1, price2)
+    rolling_hedge = compute_rolling_hedge(p1, p2, rolling_window)
+    kalman_hedge = compute_kalman_hedge(p1, p2)
 
     return {
         "hedge_ratio": round(hedge_ratio, 6),

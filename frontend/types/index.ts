@@ -68,6 +68,7 @@ export interface Parameters {
   insample_pct: number; // integer 50–90; divided by 100 before sending to API
   use_kalman: boolean;
   use_regime: boolean;
+  use_log_prices: boolean;
 }
 
 export interface ScanPairResult {

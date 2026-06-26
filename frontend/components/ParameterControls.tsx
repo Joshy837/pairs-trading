@@ -175,6 +175,37 @@ export default function ParameterControls({ params, onChange }: Props) {
             : "Static β estimated on in-sample window only"}
         </span>
       </div>
+
+      <div className="flex items-center gap-3">
+        <span className="label">Price Space</span>
+        <div className="flex items-center rounded-md border border-divider overflow-hidden">
+          <button
+            onClick={() => onChange({ ...params, use_log_prices: false })}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              !params.use_log_prices
+                ? "bg-primary text-subtle"
+                : "bg-surface text-muted hover:text-subtle"
+            }`}
+          >
+            Level
+          </button>
+          <button
+            onClick={() => onChange({ ...params, use_log_prices: true })}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              params.use_log_prices
+                ? "bg-primary text-subtle"
+                : "bg-surface text-muted hover:text-subtle"
+            }`}
+          >
+            Log
+          </button>
+        </div>
+        <span className="text-xs text-faint">
+          {params.use_log_prices
+            ? "Spread = log(P₁) − β·log(P₂) — stabilises variance across price levels"
+            : "Spread = P₁ − β·P₂ — standard dollar-spread"}
+        </span>
+      </div>
     </div>
     </>
   );

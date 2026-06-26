@@ -104,6 +104,33 @@ def fetch_prices_batch(tickers: list, lookback_days: int) -> "pd.DataFrame":
     return prices
 
 
+def fetch_benchmark(ticker: str, lookback_days: int) -> "pd.Series":
+    """
+    Fetch adjusted close for a benchmark ticker (e.g. SPY).
+
+    Raises ValueError if no data is returned.
+    """
+    end = datetime.today()
+    start = end - timedelta(days=lookback_days)
+
+    raw = yf.download(
+        ticker,
+        start=start.strftime("%Y-%m-%d"),
+        end=end.strftime("%Y-%m-%d"),
+        auto_adjust=True,
+        progress=False,
+    )
+
+    if raw.empty:
+        raise ValueError(f"No data returned for benchmark ticker '{ticker}'.")
+
+    close = raw["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+
+    return close.rename(ticker)
+
+
 def fetch_sectors(tickers: list[str]) -> "dict[str, str | None]":
     """
     Fetch GICS sector for each ticker using yfinance.

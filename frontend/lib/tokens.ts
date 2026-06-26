@@ -12,6 +12,7 @@ export const CHART_COLORS = {
   kalman: "#fb923c", // orange-400  — Kalman filter hedge ratio
   stop: "#f59e0b",   // amber-400  — stop-loss threshold lines
   regime: "#f59e0b", // amber-400  — trending regime overlay (unfavorable)
+  benchmark: "#60a5fa", // blue-400   — SPY benchmark line
 } as const;
 
 export const CHART_AXIS = {

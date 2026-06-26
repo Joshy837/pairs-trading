@@ -59,6 +59,7 @@ def run_backtest(
     insample_pct: float = 0.7,
     use_kalman: bool = False,
     use_regime: bool = False,
+    spy: "pd.Series | None" = None,
 ) -> dict:
     """
     Simulate the pairs trading strategy and return performance results.
@@ -242,6 +243,20 @@ def run_backtest(
         annualized_return = -1.0
     calmar_ratio = round(annualized_return / abs(max_dd_val), 3) if max_dd_val < 0 else None
 
+    # Benchmark: align SPY to pair's date index, normalise to $100 at OOS start
+    benchmark_list: list | None = None
+    if spy is not None:
+        try:
+            spy_aligned = spy.reindex(price1.index).ffill()
+            spy_start = float(spy_aligned.iloc[insample_cutoff])
+            if spy_start > 0 and not math.isnan(spy_start):
+                spy_norm = spy_aligned / spy_start * 100
+                benchmark_list = _to_json_list(spy_norm)
+                for idx in range(insample_cutoff):
+                    benchmark_list[idx] = None
+        except Exception:
+            pass  # silently skip if alignment fails
+
     return {
         "equity_curve": equity_list,
         "dates": price1.index.strftime("%Y-%m-%d").tolist(),
@@ -261,4 +276,5 @@ def run_backtest(
         "hedge_ratio": round(hedge_ratio, 6),
         "insample_end_date": insample_end_date,
         "regime": regime,
+        "benchmark": benchmark_list,
     }

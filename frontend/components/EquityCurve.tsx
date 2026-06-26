@@ -19,9 +19,14 @@ interface Props {
 }
 
 export default function EquityCurve({ data, insampleEndDate }: Props) {
+  const hasBenchmark = Array.isArray(data.benchmark);
+
   const chartData = data.dates.map((date, i) => ({
     date,
-    equity: data.equity_curve[i] !== null ? Number(data.equity_curve[i]?.toFixed(2)) : undefined,
+    equity: data.equity_curve[i] != null ? Number(data.equity_curve[i]!.toFixed(2)) : undefined,
+    ...(hasBenchmark && {
+      benchmark: data.benchmark![i] != null ? Number(data.benchmark![i]!.toFixed(2)) : undefined,
+    }),
   }));
 
   const interval = Math.max(1, Math.floor(chartData.length / 7));
@@ -39,7 +44,7 @@ export default function EquityCurve({ data, insampleEndDate }: Props) {
           domain={["auto", "auto"]}
         />
         <Tooltip
-          formatter={(v: number) => [`$${v?.toFixed(2)}`, "Portfolio"]}
+          formatter={(v: number) => `$${v?.toFixed(2)}`}
           labelStyle={{ fontSize: CHART_AXIS.fontSize }}
           contentStyle={{ fontSize: CHART_AXIS.fontSize }}
         />
@@ -52,9 +57,22 @@ export default function EquityCurve({ data, insampleEndDate }: Props) {
             label={{ value: "OOS →", fill: "#9ca3af", fontSize: 9, position: "insideTopRight" }}
           />
         )}
+        {hasBenchmark && (
+          <Line
+            type="monotone"
+            dataKey="benchmark"
+            name="SPY"
+            stroke={CHART_COLORS.benchmark}
+            dot={false}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            connectNulls={false}
+          />
+        )}
         <Line
           type="monotone"
           dataKey="equity"
+          name="Portfolio"
           stroke={CHART_COLORS.equity}
           dot={false}
           strokeWidth={2}

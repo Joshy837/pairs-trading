@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from backtest import run_backtest
 from cointegration import analyze_pair, scan_pair
-from data import fetch_prices, fetch_prices_batch, fetch_sectors
+from data import fetch_benchmark, fetch_prices, fetch_prices_batch, fetch_sectors
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
 
@@ -255,6 +255,13 @@ def backtest(req: BacktestRequest) -> dict:
     """
     try:
         p1, p2 = fetch_prices(req.ticker1, req.ticker2, req.lookback_days)
+
+        spy = None
+        try:
+            spy = fetch_benchmark("SPY", req.lookback_days)
+        except Exception:
+            pass  # benchmark is optional — don't fail the backtest if SPY is unavailable
+
         return run_backtest(
             p1, p2,
             req.zscore_window,
@@ -265,6 +272,7 @@ def backtest(req: BacktestRequest) -> dict:
             req.insample_pct,
             req.use_kalman,
             req.use_regime,
+            spy=spy,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

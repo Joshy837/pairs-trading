@@ -55,6 +55,7 @@ export interface BacktestResult {
   hedge_ratio: number;
   insample_end_date: string;
   regime: (number | null)[] | null;
+  benchmark: (number | null)[] | null;
 }
 
 export interface Parameters {

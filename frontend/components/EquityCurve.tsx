@@ -10,11 +10,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BacktestResult } from "@/types";
 import { CHART_AXIS, CHART_COLORS } from "@/lib/tokens";
 
 interface Props {
-  data: BacktestResult;
+  data: { dates: string[]; equity_curve: (number | null)[]; benchmark?: (number | null)[] | null };
   insampleEndDate?: string;
 }
 

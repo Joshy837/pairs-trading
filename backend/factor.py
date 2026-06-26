@@ -214,6 +214,155 @@ def analyze_factor_stock(
     }
 
 
+def run_factor_backtest(
+    resid: pd.Series,
+    zscore_window: int,
+    entry_z: float,
+    exit_z: float,
+    stop_z: float,
+    transaction_cost_bps: float,
+    insample_pct: float,
+) -> dict:
+    """
+    Backtest a mean-reversion strategy on the factor-neutral residual ε.
+
+    Signals are generated from the rolling z-score of the residual return series.
+    Position P&L = position * ε_t (daily factor-neutral return).
+    Only out-of-sample performance is reported.
+    """
+    from backtest import compute_max_drawdown, compute_sharpe
+
+    if exit_z >= entry_z:
+        raise ValueError("exit_z must be strictly less than entry_z.")
+    if entry_z >= stop_z:
+        raise ValueError("stop_z must be strictly greater than entry_z.")
+
+    insample_cutoff = max(zscore_window * 2, int(len(resid) * insample_pct))
+    insample_cutoff = min(insample_cutoff, len(resid) - zscore_window)
+
+    zscore = rolling_zscore(resid, zscore_window)
+
+    position = pd.Series(0.0, index=resid.index)
+    current_pos = 0.0
+    trades: list[dict] = []
+
+    for i in range(insample_cutoff, len(zscore)):
+        z = zscore.iloc[i]
+        if math.isnan(z):
+            continue
+
+        if current_pos == 0.0:
+            if z > entry_z:
+                current_pos = -1.0
+                trades.append({
+                    "date": resid.index[i].strftime("%Y-%m-%d"),
+                    "type": "short",
+                    "entry_z": round(z, 3),
+                    "stop_triggered": False,
+                })
+            elif z < -entry_z:
+                current_pos = 1.0
+                trades.append({
+                    "date": resid.index[i].strftime("%Y-%m-%d"),
+                    "type": "long",
+                    "entry_z": round(z, 3),
+                    "stop_triggered": False,
+                })
+        else:
+            if abs(z) >= stop_z:
+                if trades:
+                    trades[-1]["exit_date"] = resid.index[i].strftime("%Y-%m-%d")
+                    trades[-1]["exit_z"] = round(z, 3)
+                    trades[-1]["stop_triggered"] = True
+                current_pos = 0.0
+            elif abs(z) < exit_z:
+                if trades:
+                    trades[-1]["exit_date"] = resid.index[i].strftime("%Y-%m-%d")
+                    trades[-1]["exit_z"] = round(z, 3)
+                current_pos = 0.0
+
+        position.iloc[i] = current_pos
+
+    pos_shifted = position.shift(1).fillna(0)
+    cost_per_unit = transaction_cost_bps / 10000
+    trade_cost = pos_shifted.diff().abs() * cost_per_unit
+    portfolio_returns = pos_shifted * resid.fillna(0) - trade_cost.fillna(0)
+    portfolio_returns.iloc[:insample_cutoff] = 0.0
+    equity = (1 + portfolio_returns).cumprod() * 100
+
+    equity_list = _to_json_list(equity)
+    for idx in range(insample_cutoff):
+        equity_list[idx] = None
+
+    insample_end_date = resid.index[insample_cutoff - 1].strftime("%Y-%m-%d")
+
+    date_to_idx = {resid.index[i].strftime("%Y-%m-%d"): i for i in range(len(resid))}
+    for trade in trades:
+        entry_i = date_to_idx.get(trade["date"])
+        exit_date = trade.get("exit_date")
+        if entry_i is not None and exit_date is not None:
+            exit_i = date_to_idx.get(exit_date)
+            if exit_i is not None:
+                entry_eq = float(equity.iloc[entry_i])
+                exit_eq = float(equity.iloc[exit_i])
+                trade["pnl"] = round(exit_eq / entry_eq - 1, 4) if entry_eq != 0 else None
+            else:
+                trade["pnl"] = None
+        else:
+            trade["pnl"] = None
+
+    oos_returns = portfolio_returns.iloc[insample_cutoff:]
+    oos_equity = equity.iloc[insample_cutoff:]
+
+    completed = [t for t in trades if t.get("pnl") is not None]
+    pnls = [t["pnl"] for t in completed]
+    win_rate = None
+    profit_factor = None
+    avg_trade_duration = None
+
+    if pnls:
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        win_rate = round(len(wins) / len(pnls), 4)
+        gross_profit = sum(wins)
+        gross_loss = abs(sum(losses))
+        if gross_loss > 0:
+            profit_factor = round(gross_profit / gross_loss, 3)
+
+        durations = []
+        for t in completed:
+            ei = date_to_idx.get(t["date"])
+            xi = date_to_idx.get(t.get("exit_date", ""))
+            if ei is not None and xi is not None:
+                durations.append(xi - ei)
+        if durations:
+            avg_trade_duration = round(sum(durations) / len(durations))
+
+    total_return_val = float(oos_equity.iloc[-1] / 100 - 1)
+    max_dd_val = compute_max_drawdown(oos_equity)
+    oos_days = max(len(oos_returns), 1)
+    annualized_return = float((1 + total_return_val) ** (252 / oos_days) - 1) if total_return_val > -1 else -1.0
+    calmar_ratio = round(annualized_return / abs(max_dd_val), 3) if max_dd_val < 0 else None
+
+    return {
+        "equity_curve": equity_list,
+        "dates": resid.index.strftime("%Y-%m-%d").tolist(),
+        "trades": trades,
+        "metrics": {
+            "sharpe_ratio": round(compute_sharpe(oos_returns), 3),
+            "max_drawdown": round(max_dd_val, 4),
+            "total_return": round(total_return_val, 4),
+            "num_trades": len(trades),
+            "win_rate": win_rate,
+            "avg_trade_duration": avg_trade_duration,
+            "profit_factor": profit_factor,
+            "calmar_ratio": calmar_ratio,
+        },
+        "insample_end_date": insample_end_date,
+        "benchmark": None,
+    }
+
+
 def analyze_factor_pair(
     price1: pd.Series,
     price2: pd.Series,

@@ -125,6 +125,15 @@ export interface FactorStockResult {
   current_zscore: number | null;
 }
 
+export interface FactorBacktestResult {
+  equity_curve: (number | null)[];
+  dates: string[];
+  trades: Trade[];
+  metrics: BacktestMetrics;
+  insample_end_date: string;
+  benchmark: (number | null)[] | null;
+}
+
 export interface LogEntry {
   kind: "info" | "header" | "pass" | "fail" | "summary";
   text: string;

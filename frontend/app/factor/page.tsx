@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import EquityCurve from "@/components/EquityCurve";
 import ResidualStockChart from "@/components/ResidualStockChart";
+import ResultsPanel from "@/components/ResultsPanel";
 import ScanProgress from "@/components/ScanProgress";
 import Select from "@/components/Select";
-import { FactorLoadings, FactorStockResult, LogEntry } from "@/types";
+import { FactorBacktestResult, FactorLoadings, FactorStockResult, LogEntry } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -161,6 +163,49 @@ export default function FactorPage() {
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [result, setResult] = useState<FactorStockResult | null>(null);
+
+  // Step 4 backtest state
+  const [btEntryZ, setBtEntryZ] = useState(2.0);
+  const [btExitZ, setBtExitZ] = useState(0.5);
+  const [btStopZ, setBtStopZ] = useState(4.0);
+  const [btCostBps, setBtCostBps] = useState(5);
+  const [btInsamplePct, setBtInsamplePct] = useState(70);
+  const [btLoading, setBtLoading] = useState(false);
+  const [btError, setBtError] = useState<string | null>(null);
+  const [btResult, setBtResult] = useState<FactorBacktestResult | null>(null);
+
+  async function runBacktest() {
+    if (!result) return;
+    setBtLoading(true);
+    setBtError(null);
+    setBtResult(null);
+
+    try {
+      const res = await fetch(`${API}/api/factor-stock/backtest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker: ticker.toUpperCase(),
+          sector_etf: sectorEtf,
+          lookback_days: lookbackDays,
+          zscore_window: zscoreWindow,
+          entry_z: btEntryZ,
+          exit_z: btExitZ,
+          stop_z: btStopZ,
+          transaction_cost_bps: btCostBps,
+          insample_pct: btInsamplePct / 100,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error((json as { detail?: string }).detail ?? "Request failed.");
+      setBtResult(json as FactorBacktestResult);
+    } catch (err: unknown) {
+      setBtError(err instanceof Error ? err.message : "An unexpected error occurred.");
+    } finally {
+      setBtLoading(false);
+    }
+  }
 
   function addLog(entry: LogEntry) {
     setLogEntries((prev) => [...prev, entry]);
@@ -497,6 +542,125 @@ export default function FactorPage() {
               </div>
             )}
           </Card>
+          {/* ── Step 4: Backtest ── */}
+          <div>
+            <p className="section-heading mb-3">Step 4 — Backtest ε Mean-Reversion</p>
+            <div className="space-y-4">
+              <Card>
+                <div className="space-y-5">
+                  <p className="text-xs text-faint">
+                    Simulate trading the z-score of ε using entry/exit thresholds. Factor loadings
+                    are fit on the full dataset; only out-of-sample performance is reported.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div>
+                      <label className="label mb-1 block">Entry Z — {btEntryZ.toFixed(1)}σ</label>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={4.0}
+                        step={0.5}
+                        value={btEntryZ}
+                        onChange={(e) => setBtEntryZ(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-xs text-faint mt-0.5">
+                        <span>0.5</span><span>4.0</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="label mb-1 block">Exit Z — {btExitZ.toFixed(1)}σ</label>
+                      <input
+                        type="range"
+                        min={0.0}
+                        max={2.0}
+                        step={0.5}
+                        value={btExitZ}
+                        onChange={(e) => setBtExitZ(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-xs text-faint mt-0.5">
+                        <span>0.0</span><span>2.0</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="label mb-1 block">Stop-Loss Z — {btStopZ.toFixed(1)}σ</label>
+                      <input
+                        type="range"
+                        min={2.5}
+                        max={6.0}
+                        step={0.5}
+                        value={btStopZ}
+                        onChange={(e) => setBtStopZ(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-xs text-faint mt-0.5">
+                        <span>2.5</span><span>6.0</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="label mb-1 block">Transaction Cost — {btCostBps} bps</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={50}
+                        step={5}
+                        value={btCostBps}
+                        onChange={(e) => setBtCostBps(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-xs text-faint mt-0.5">
+                        <span>0</span><span>50</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="label mb-1 block">In-Sample — {btInsamplePct}%</label>
+                      <input
+                        type="range"
+                        min={50}
+                        max={90}
+                        step={10}
+                        value={btInsamplePct}
+                        onChange={(e) => setBtInsamplePct(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-xs text-faint mt-0.5">
+                        <span>50%</span><span>90%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={runBacktest}
+                    disabled={btLoading}
+                    className="px-5 py-2 bg-primary text-subtle text-sm font-medium rounded-md hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {btLoading ? "Running…" : "Run Backtest"}
+                  </button>
+                </div>
+              </Card>
+
+              {btError && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
+                  {btError}
+                </div>
+              )}
+
+              {btResult && (
+                <>
+                  <ResultsPanel metrics={btResult.metrics} />
+                  <Card title="Equity Curve — ε Strategy (OOS)">
+                    <EquityCurve data={btResult} insampleEndDate={btResult.insample_end_date} />
+                  </Card>
+                </>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>

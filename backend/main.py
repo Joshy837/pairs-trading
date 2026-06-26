@@ -19,6 +19,7 @@ from factor import (
     fit_factor_model,
     prepare_aligned_returns,
     prepare_aligned_returns_single,
+    run_factor_backtest,
 )
 
 app = FastAPI(title="Pairs Trading API", version="1.0.0")
@@ -294,6 +295,51 @@ class FactorStockRequest(BaseModel):
         if self.sector_etf.upper() not in SECTOR_ETFS:
             raise ValueError(f"sector_etf must be one of: {', '.join(sorted(SECTOR_ETFS))}.")
         return self
+
+
+class FactorStockBacktestRequest(FactorStockRequest):
+    entry_z: float = Field(default=2.0, ge=0.5, le=4.0)
+    exit_z: float = Field(default=0.5, ge=0.0, le=2.0)
+    stop_z: float = Field(default=4.0, ge=2.5, le=6.0)
+    transaction_cost_bps: float = Field(default=5.0, ge=0.0, le=50.0)
+    insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
+
+    @model_validator(mode="after")
+    def check_thresholds(self) -> "FactorStockBacktestRequest":
+        if self.exit_z >= self.entry_z:
+            raise ValueError("exit_z must be strictly less than entry_z.")
+        if self.entry_z >= self.stop_z:
+            raise ValueError("stop_z must be strictly greater than entry_z.")
+        return self
+
+
+@app.post("/api/factor-stock/backtest")
+def factor_stock_backtest(req: FactorStockBacktestRequest) -> dict:
+    """
+    Run a mean-reversion backtest on the factor-neutral residual ε for a single stock.
+
+    Re-fetches prices, fits the 3-factor model, and backtests the ε z-score signal.
+    Returns equity curve and performance metrics (OOS only).
+    """
+    try:
+        price, spy, sector = fetch_factor_stock_prices(
+            req.ticker, req.sector_etf, req.lookback_days
+        )
+        returns = prepare_aligned_returns_single(price, spy, sector, req.zscore_window)
+        _, resid, _ = fit_factor_model(returns, "p1")
+        return run_factor_backtest(
+            resid,
+            req.zscore_window,
+            req.entry_z,
+            req.exit_z,
+            req.stop_z,
+            req.transaction_cost_bps,
+            req.insample_pct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Backtest failed: {exc}")
 
 
 @app.post("/api/factor-stock/stream")

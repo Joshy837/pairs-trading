@@ -158,7 +158,10 @@ export interface PortfolioPairBreakdown {
   ticker1: string;
   ticker2: string;
   metrics: BacktestMetrics;
+  weight: number;
 }
+
+export type SizingMethod = "equal" | "inverse_vol" | "signal_strength";
 
 export interface PortfolioResult {
   portfolio_equity: number[];
@@ -169,6 +172,7 @@ export interface PortfolioResult {
     max_drawdown: number;
     total_trades: number;
   };
+  sizing_method: SizingMethod;
   pairs: PortfolioPairBreakdown[];
 }
 

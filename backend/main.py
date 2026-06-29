@@ -760,6 +760,7 @@ class PortfolioBacktestRequest(BaseModel):
     max_holding_days: Optional[int] = Field(default=None, ge=5, le=200)
     use_halflife_hold: bool = Field(default=False)
     halflife_multiplier: float = Field(default=2.0, ge=0.5, le=2.0)
+    sizing_method: str = Field(default="equal", pattern="^(equal|inverse_vol|signal_strength)$")
 
     @model_validator(mode="after")
     def check_valid(self) -> "PortfolioBacktestRequest":
@@ -836,15 +837,41 @@ def portfolio_backtest(req: PortfolioBacktestRequest) -> dict:
         if not returns_list:
             raise HTTPException(status_code=400, detail="No out-of-sample data available.")
 
-        # Equal-weight portfolio: average daily returns across all pairs
         ret_df = pd.concat(returns_list, axis=1).fillna(0)
-        portfolio_ret = ret_df.mean(axis=1)
+
+        # Compute per-pair weights based on sizing method
+        pair_keys = [r.name for r in returns_list]
+        n = len(pair_keys)
+
+        if req.sizing_method == "inverse_vol":
+            vols = ret_df.std()
+            vols = vols.replace(0, float("nan")).fillna(vols.mean())
+            raw_w = 1.0 / vols
+        elif req.sizing_method == "signal_strength":
+            # Weight by mean |entry_z| across completed trades
+            strength: dict[str, float] = {}
+            for t1, t2, bt in pair_results:
+                key = f"{t1}:{t2}"
+                completed = [tr for tr in bt.get("trades", []) if tr.get("exit_date")]
+                if completed:
+                    strength[key] = float(pd.Series([abs(tr["entry_z"]) for tr in completed]).mean())
+                else:
+                    strength[key] = 1.0
+            raw_w = pd.Series({k: strength.get(k, 1.0) for k in pair_keys})
+        else:
+            raw_w = pd.Series({k: 1.0 for k in pair_keys})
+
+        weights = raw_w / raw_w.sum()
+
+        portfolio_ret = (ret_df * weights).sum(axis=1)
         portfolio_equity = (1 + portfolio_ret).cumprod() * 100
 
         total_return = float(portfolio_equity.iloc[-1] / 100 - 1)
         max_dd = compute_max_drawdown(portfolio_equity)
         sharpe = compute_sharpe(portfolio_ret)
         total_trades = sum(bt["metrics"]["num_trades"] for _, _, bt in pair_results)
+
+        sorted_results = sorted(pair_results, key=lambda x: x[2]["metrics"]["sharpe_ratio"], reverse=True)
 
         return {
             "portfolio_equity": [round(float(v), 2) for v in portfolio_equity],
@@ -855,9 +882,15 @@ def portfolio_backtest(req: PortfolioBacktestRequest) -> dict:
                 "max_drawdown": round(max_dd, 4),
                 "total_trades": total_trades,
             },
+            "sizing_method": req.sizing_method,
             "pairs": [
-                {"ticker1": t1, "ticker2": t2, "metrics": bt["metrics"]}
-                for t1, t2, bt in sorted(pair_results, key=lambda x: x[2]["metrics"]["sharpe_ratio"], reverse=True)
+                {
+                    "ticker1": t1,
+                    "ticker2": t2,
+                    "metrics": bt["metrics"],
+                    "weight": round(float(weights.get(f"{t1}:{t2}", 1.0 / n)), 4),
+                }
+                for t1, t2, bt in sorted_results
             ],
         }
     except HTTPException:

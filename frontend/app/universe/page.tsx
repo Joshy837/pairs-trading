@@ -5,7 +5,7 @@ import { useState } from "react";
 import EquityCurve from "@/components/EquityCurve";
 import ParameterControls from "@/components/ParameterControls";
 import ScanProgress from "@/components/ScanProgress";
-import { LogEntry, Parameters, PortfolioResult, UniversePairResult } from "@/types";
+import { LogEntry, Parameters, PortfolioResult, SizingMethod, UniversePairResult } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -96,6 +96,7 @@ export default function UniversePage() {
 
   // Portfolio sim state
   const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
+  const [sizingMethod, setSizingMethod] = useState<SizingMethod>("equal");
   const [portfolioLoading, setPortfolioLoading] = useState(false);
   const [portfolioError, setPortfolioError] = useState<string | null>(null);
   const [portfolioResult, setPortfolioResult] = useState<PortfolioResult | null>(null);
@@ -255,7 +256,7 @@ export default function UniversePage() {
       const res = await fetch(`${API}/api/portfolio/backtest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairs, ...buildBody() }),
+        body: JSON.stringify({ pairs, ...buildBody(), sizing_method: sizingMethod }),
       });
 
       const json = await res.json();
@@ -486,19 +487,39 @@ export default function UniversePage() {
             </div>
 
             {/* Portfolio sim trigger */}
-            <div className="mt-4 pt-4 border-t border-divider flex items-center justify-between gap-3">
-              <p className="text-xs text-muted">
-                {selectedPairs.size < 2
-                  ? "Select at least 2 pairs to run a portfolio simulation"
-                  : `${selectedPairs.size} pairs selected — equal-weight, independent`}
-              </p>
-              <button
-                onClick={handlePortfolioRun}
-                disabled={selectedPairs.size < 2 || portfolioLoading}
-                className="px-4 py-2 bg-primary hover:bg-primary-dark disabled:opacity-40 text-subtle text-xs font-medium rounded-md transition-colors"
-              >
-                {portfolioLoading ? "Simulating…" : "Run Portfolio Simulation"}
-              </button>
+            <div className="mt-4 pt-4 border-t border-divider space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="label">Position Sizing</p>
+                <div className="flex rounded-md border border-divider overflow-hidden">
+                  {([ ["equal", "Equal Weight"], ["inverse_vol", "Inverse Vol"], ["signal_strength", "Signal Strength"] ] as [SizingMethod, string][]).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => { setSizingMethod(val); setPortfolioResult(null); }}
+                      className={`px-3 py-1 text-xs font-medium transition-colors border-r border-divider last:border-r-0 ${
+                        sizingMethod === val
+                          ? "bg-primary/20 text-primary"
+                          : "text-muted hover:text-subtle hover:bg-surface/60"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted">
+                  {selectedPairs.size < 2
+                    ? "Select at least 2 pairs to run a portfolio simulation"
+                    : `${selectedPairs.size} pairs selected`}
+                </p>
+                <button
+                  onClick={handlePortfolioRun}
+                  disabled={selectedPairs.size < 2 || portfolioLoading}
+                  className="px-4 py-2 bg-primary hover:bg-primary-dark disabled:opacity-40 text-subtle text-xs font-medium rounded-md transition-colors"
+                >
+                  {portfolioLoading ? "Simulating…" : "Run Portfolio Simulation"}
+                </button>
+              </div>
             </div>
           </Card>
         )}
@@ -551,6 +572,7 @@ export default function UniversePage() {
                   <thead>
                     <tr className="border-b border-divider">
                       <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Pair</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Weight</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Sharpe</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Return</th>
                       <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Drawdown</th>
@@ -567,6 +589,7 @@ export default function UniversePage() {
                           <span className="text-faint mx-1">/</span>
                           <span className="font-mono font-semibold text-subtle">{p.ticker2}</span>
                         </td>
+                        <td className="px-3 py-2 text-right font-mono text-muted">{(p.weight * 100).toFixed(1)}%</td>
                         <td className="px-3 py-2 text-right font-mono"><SharpeCell v={p.metrics.sharpe_ratio} /></td>
                         <td className="px-3 py-2 text-right font-mono"><ReturnCell v={p.metrics.total_return} /></td>
                         <td className="px-3 py-2 text-right font-mono text-red-400">{fmtPct(p.metrics.max_drawdown)}</td>

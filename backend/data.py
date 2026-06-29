@@ -93,7 +93,17 @@ def fetch_prices_batch(tickers: list, lookback_days: int) -> "pd.DataFrame":
     if len(available) < 2:
         raise ValueError("Fewer than 2 valid tickers found. Check your symbols and try again.")
 
-    prices = prices[available].dropna()
+    prices = prices[available]
+
+    # Drop tickers that are missing more than 20% of rows (new IPOs, bad data, etc.)
+    # before doing row-level alignment, so one bad ticker can't zero out the whole dataset.
+    coverage = prices.notna().mean()
+    prices = prices[coverage[coverage >= 0.8].index.tolist()]
+    if len(prices.columns) < 2:
+        raise ValueError("Fewer than 2 tickers have sufficient price history. Check your symbols and try again.")
+
+    # Forward-fill to bridge trading-calendar gaps, then drop any rows still missing.
+    prices = prices.ffill().dropna()
 
     if len(prices) < 60:
         raise ValueError(

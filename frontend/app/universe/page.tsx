@@ -5,21 +5,21 @@ import { useState } from "react";
 import EquityCurve from "@/components/EquityCurve";
 import ParameterControls from "@/components/ParameterControls";
 import ScanProgress from "@/components/ScanProgress";
-import { LogEntry, Parameters, PortfolioResult, SizingMethod, UniversePairResult } from "@/types";
+import { LogEntry, Parameters, PortfolioPairBreakdown, PortfolioResult, ScanPairResult, SizingMethod } from "@/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const UNIVERSES = [
-  { key: "djia", label: "Dow Jones 30", count: 30 },
-  { key: "sp100", label: "S&P 100", count: 100 },
-  { key: "nasdaq100", label: "NASDAQ 100", count: 100 },
-  { key: "sp500", label: "S&P 500", count: "~420" },
+  { key: "djia",     label: "Dow Jones 30",  count: 30 },
+  { key: "sp100",    label: "S&P 100",       count: 100 },
+  { key: "nasdaq100",label: "NASDAQ 100",    count: 100 },
+  { key: "sp500",    label: "S&P 500",       count: "~420" },
 ] as const;
 
 type UniverseKey = (typeof UNIVERSES)[number]["key"];
 
-const DEFAULT_PARAMS: Parameters = {
-  lookback_days: 365,
+const DEFAULT_BT_PARAMS: Parameters = {
+  lookback_days: 730,
   zscore_window: 30,
   entry_z: 2.0,
   exit_z: 0.5,
@@ -39,20 +39,29 @@ function pairKey(t1: string, t2: string) {
   return `${t1}:${t2}`;
 }
 
-function Card({ title, children }: { title?: string; children: React.ReactNode }) {
+function Card({ children, step, title }: { children: React.ReactNode; step?: string; title?: string }) {
   return (
     <div className="bg-panel rounded-xl shadow-sm border border-divider p-5">
-      {title && <h2 className="text-sm font-semibold text-subtle mb-4">{title}</h2>}
+      {(step || title) && (
+        <div className="flex items-center gap-2 mb-4">
+          {step && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-semibold text-primary bg-primary/10 border border-primary/20">
+              {step}
+            </span>
+          )}
+          {title && <h2 className="text-sm font-semibold text-subtle">{title}</h2>}
+        </div>
+      )}
       {children}
     </div>
   );
 }
 
-function MetricTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function MetricTile({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="bg-surface rounded-lg p-4 border border-divider">
       <p className="label mb-1">{label}</p>
-      <p className="text-xl font-semibold font-mono text-subtle">{value}</p>
+      <p className={`text-xl font-semibold font-mono ${color ?? "text-subtle"}`}>{value}</p>
       {sub && <p className="text-xs text-faint mt-0.5">{sub}</p>}
     </div>
   );
@@ -68,46 +77,63 @@ function fmtPct(n: number | null | undefined): string {
   return (n * 100).toFixed(1) + "%";
 }
 
-function SharpeCell({ v }: { v: number }) {
-  const cls = v >= 1.5 ? "text-green-400" : v >= 0.5 ? "text-subtle" : "text-red-400";
-  return <span className={cls}>{v.toFixed(2)}</span>;
-}
-
-function ReturnCell({ v }: { v: number }) {
-  return <span className={v >= 0 ? "text-green-400" : "text-red-400"}>{fmtPct(v)}</span>;
+function buildBtBody(
+  pairs: Array<{ ticker1: string; ticker2: string }>,
+  params: Parameters,
+  sizing: SizingMethod,
+): string {
+  const { max_hold_mode, max_holding_days, halflife_multiplier, ...rest } = params;
+  return JSON.stringify({
+    pairs: pairs.map((p) => ({ ticker1: p.ticker1, ticker2: p.ticker2 })),
+    ...rest,
+    insample_pct: rest.insample_pct / 100,
+    max_holding_days: max_hold_mode === "custom" ? max_holding_days : null,
+    use_halflife_hold: max_hold_mode === "auto",
+    halflife_multiplier: max_hold_mode === "auto" ? halflife_multiplier : 2,
+    sizing_method: sizing,
+  });
 }
 
 export default function UniversePage() {
+  // Step 01: scan
   const [universe, setUniverse] = useState<UniverseKey>("sp100");
   const [topN, setTopN] = useState(50);
   const [corrThreshold, setCorrThreshold] = useState(0.5);
-  const [params, setParams] = useState<Parameters>(DEFAULT_PARAMS);
+  const [scanLookback, setScanLookback] = useState(365);
+  const [scanZWindow, setScanZWindow] = useState(30);
 
-  // Scan state
   const [scanLoading, setScanLoading] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
-  const [results, setResults] = useState<UniversePairResult[] | null>(null);
-  const [resultMeta, setResultMeta] = useState<{ label: string; total: number } | null>(null);
+  const [scanResults, setScanResults] = useState<ScanPairResult[] | null>(null);
+  const [scanMeta, setScanMeta] = useState<{ label: string } | null>(null);
 
-  // Table sort
-  const [sortKey, setSortKey] = useState<keyof UniversePairResult>("sharpe_ratio");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  // Portfolio sim state
+  // Pair selection (feeds into step 02 + 03)
   const [selectedPairs, setSelectedPairs] = useState<Set<string>>(new Set());
+
+  // Scan table sort
+  const [sortKey, setSortKey] = useState<keyof ScanPairResult>("pvalue");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Step 02: backtest
+  const [btParams, setBtParams] = useState<Parameters>(DEFAULT_BT_PARAMS);
+  const [btLoading, setBtLoading] = useState(false);
+  const [btError, setBtError] = useState<string | null>(null);
+  const [btResult, setBtResult] = useState<PortfolioResult | null>(null);
+
+  // Step 03: portfolio simulation
   const [sizingMethod, setSizingMethod] = useState<SizingMethod>("equal");
-  const [portfolioLoading, setPortfolioLoading] = useState(false);
-  const [portfolioError, setPortfolioError] = useState<string | null>(null);
-  const [portfolioResult, setPortfolioResult] = useState<PortfolioResult | null>(null);
+  const [ptLoading, setPtLoading] = useState(false);
+  const [ptError, setPtError] = useState<string | null>(null);
+  const [ptResult, setPtResult] = useState<PortfolioResult | null>(null);
 
   function addLog(entry: LogEntry) {
     setLogEntries((prev) => [...prev, entry]);
   }
 
-  function toggleSort(key: keyof UniversePairResult) {
+  function toggleSort(key: keyof ScanPairResult) {
     if (sortKey === key) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-    else { setSortKey(key); setSortDir("desc"); }
+    else { setSortKey(key); setSortDir("asc"); }
   }
 
   function togglePair(key: string) {
@@ -116,64 +142,52 @@ export default function UniversePage() {
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
-    setPortfolioResult(null);
+    setBtResult(null);
+    setPtResult(null);
   }
 
   function selectAll() {
-    if (!results) return;
-    setSelectedPairs(new Set(results.map((p) => pairKey(p.ticker1, p.ticker2))));
-    setPortfolioResult(null);
+    if (!scanResults) return;
+    setSelectedPairs(new Set(scanResults.map((p) => pairKey(p.ticker1, p.ticker2))));
+    setBtResult(null);
+    setPtResult(null);
   }
 
   function clearSelection() {
     setSelectedPairs(new Set());
-    setPortfolioResult(null);
+    setBtResult(null);
+    setPtResult(null);
   }
 
-  const sorted = results
-    ? [...results].sort((a, b) => {
-        const av = (a[sortKey] as number) ?? -Infinity;
-        const bv = (b[sortKey] as number) ?? -Infinity;
-        return sortDir === "desc" ? bv - av : av - bv;
+  const sortedScanResults = scanResults
+    ? [...scanResults].sort((a, b) => {
+        const av = (a[sortKey] as number) ?? (sortDir === "asc" ? Infinity : -Infinity);
+        const bv = (b[sortKey] as number) ?? (sortDir === "asc" ? Infinity : -Infinity);
+        return sortDir === "asc" ? av - bv : bv - av;
       })
     : [];
 
-  function buildBody() {
-    return {
-      universe,
-      top_n: topN,
-      corr_threshold: corrThreshold,
-      lookback_days: params.lookback_days,
-      zscore_window: params.zscore_window,
-      entry_z: params.entry_z,
-      exit_z: params.exit_z,
-      stop_z: params.stop_z,
-      transaction_cost_bps: params.transaction_cost_bps,
-      insample_pct: params.insample_pct / 100,
-      use_kalman: params.use_kalman,
-      use_regime: params.use_regime,
-      use_log_prices: params.use_log_prices,
-      use_vol_target: params.use_vol_target,
-      max_holding_days: params.max_hold_mode === "custom" ? params.max_holding_days : null,
-      use_halflife_hold: params.max_hold_mode === "auto",
-      halflife_multiplier: params.halflife_multiplier,
-    };
-  }
-
   async function handleScan() {
     setScanError(null);
-    setResults(null);
-    setResultMeta(null);
+    setScanResults(null);
+    setScanMeta(null);
     setLogEntries([]);
     setSelectedPairs(new Set());
-    setPortfolioResult(null);
+    setBtResult(null);
+    setPtResult(null);
     setScanLoading(true);
 
     try {
-      const res = await fetch(`${API}/api/universe/stream`, {
+      const res = await fetch(`${API}/api/universe/scan/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildBody()),
+        body: JSON.stringify({
+          universe,
+          top_n: topN,
+          corr_threshold: corrThreshold,
+          lookback_days: scanLookback,
+          zscore_window: scanZWindow,
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -217,17 +231,14 @@ export default function UniversePage() {
               break;
             case "bh_correction":
               addLog({ kind: "info", text: "Benjamini-Hochberg correction applied" });
-              addLog({ kind: "summary", text: `${event.significant} pairs pass BH threshold — running backtests…` });
-              if (event.significant > 0) addLog({ kind: "header", text: `Backtesting  (${event.significant} pairs)` });
-              break;
-            case "backtest_progress":
-              addLog({ kind: "info", text: `  Backtested ${event.done} / ${event.total} pairs…` });
+              addLog({ kind: "summary", text: `${event.significant} pairs pass BH threshold` });
               break;
             case "complete": {
-              const n = (event.pairs as UniversePairResult[]).length;
-              addLog({ kind: "summary", text: `Done — showing top ${n} of ${event.total_backtested} backtested pairs` });
-              setResults(event.pairs as UniversePairResult[]);
-              setResultMeta({ label: event.label as string, total: event.total_backtested as number });
+              const pairs = event.pairs as ScanPairResult[];
+              addLog({ kind: "summary", text: `Done — ${pairs.length} pair${pairs.length !== 1 ? "s" : ""} found` });
+              setScanResults(pairs);
+              setScanMeta({ label: event.label as string });
+              setSelectedPairs(new Set(pairs.map((p) => pairKey(p.ticker1, p.ticker2))));
               break;
             }
             case "error":
@@ -242,34 +253,56 @@ export default function UniversePage() {
     }
   }
 
-  async function handlePortfolioRun() {
-    if (selectedPairs.size < 2 || !results) return;
-    setPortfolioError(null);
-    setPortfolioResult(null);
-    setPortfolioLoading(true);
+  async function handleBacktest() {
+    if (!scanResults || selectedPairs.size < 2) return;
+    const pairs = scanResults.filter((p) => selectedPairs.has(pairKey(p.ticker1, p.ticker2)));
 
-    const pairs = results
-      .filter((p) => selectedPairs.has(pairKey(p.ticker1, p.ticker2)))
-      .map((p) => ({ ticker1: p.ticker1, ticker2: p.ticker2 }));
+    setBtLoading(true);
+    setBtError(null);
+    setBtResult(null);
+    setPtResult(null);
 
     try {
       const res = await fetch(`${API}/api/portfolio/backtest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairs, ...buildBody(), sizing_method: sizingMethod }),
+        body: buildBtBody(pairs, btParams, "equal"),
       });
-
       const json = await res.json();
-      if (!res.ok) throw new Error((json as { detail?: string }).detail ?? "Portfolio backtest failed.");
-      setPortfolioResult(json as PortfolioResult);
+      if (!res.ok) throw new Error((json as { detail?: string }).detail ?? "Backtest failed.");
+      setBtResult(json as PortfolioResult);
     } catch (err: unknown) {
-      setPortfolioError(err instanceof Error ? err.message : "An unexpected error occurred.");
+      setBtError(err instanceof Error ? err.message : "Backtest failed.");
     } finally {
-      setPortfolioLoading(false);
+      setBtLoading(false);
     }
   }
 
-  function SortHeader({ col, label }: { col: keyof UniversePairResult; label: string }) {
+  async function handlePortfolio() {
+    if (!scanResults || selectedPairs.size < 2) return;
+    const pairs = scanResults.filter((p) => selectedPairs.has(pairKey(p.ticker1, p.ticker2)));
+
+    setPtLoading(true);
+    setPtError(null);
+    setPtResult(null);
+
+    try {
+      const res = await fetch(`${API}/api/portfolio/backtest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: buildBtBody(pairs, btParams, sizingMethod),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error((json as { detail?: string }).detail ?? "Portfolio simulation failed.");
+      setPtResult(json as PortfolioResult);
+    } catch (err: unknown) {
+      setPtError(err instanceof Error ? err.message : "Portfolio simulation failed.");
+    } finally {
+      setPtLoading(false);
+    }
+  }
+
+  function SortHeader({ col, label }: { col: keyof ScanPairResult; label: string }) {
     const active = sortKey === col;
     return (
       <th
@@ -279,7 +312,7 @@ export default function UniversePage() {
         }`}
       >
         {label}
-        {active && <span className="ml-1 text-primary">{sortDir === "desc" ? "↓" : "↑"}</span>}
+        {active && <span className="ml-1 text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>}
       </th>
     );
   }
@@ -288,8 +321,8 @@ export default function UniversePage() {
     <div className="min-h-screen bg-surface">
       <main className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
 
-        {/* Universe selector */}
-        <Card title="Universe Scanner">
+        {/* Step 01: Scan */}
+        <Card step="01" title="Scan Universe">
           <div className="space-y-5">
             <div className="space-y-1.5">
               <p className="label">Universe</p>
@@ -340,66 +373,79 @@ export default function UniversePage() {
                   <span className="text-xs font-mono text-muted w-14">ρ ≥ {corrThreshold.toFixed(2)}</span>
                 </div>
               </div>
+              <div className="space-y-1">
+                <p className="label">Lookback</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range" min={90} max={1825} step={30}
+                    value={scanLookback}
+                    onChange={(e) => setScanLookback(Number(e.target.value))}
+                    className="w-36 accent-primary"
+                  />
+                  <span className="text-xs font-mono text-muted w-14">{scanLookback}d</span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="label">Z-Score Window</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range" min={10} max={120} step={5}
+                    value={scanZWindow}
+                    onChange={(e) => setScanZWindow(Number(e.target.value))}
+                    className="w-36 accent-primary"
+                  />
+                  <span className="text-xs font-mono text-muted w-14">{scanZWindow}d</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-1 border-t border-divider">
+              <button
+                onClick={handleScan}
+                disabled={scanLoading}
+                className="px-5 py-2 bg-primary hover:bg-primary-dark disabled:opacity-50 text-subtle text-sm font-medium rounded-md transition-colors"
+              >
+                {scanLoading ? "Scanning…" : "Scan Universe"}
+              </button>
             </div>
           </div>
         </Card>
 
-        {/* Backtest parameters */}
-        <Card title="Backtest Parameters">
-          <ParameterControls params={params} onChange={setParams} />
-          <div className="mt-5 pt-4 border-t border-divider flex justify-end">
-            <button
-              onClick={handleScan}
-              disabled={scanLoading}
-              className="px-5 py-2 bg-primary hover:bg-primary-dark disabled:opacity-50 text-subtle text-sm font-medium rounded-md transition-colors"
-            >
-              {scanLoading ? "Running…" : "Run Universe Scan"}
-            </button>
-          </div>
-        </Card>
-
-        {/* Scan error */}
         {scanError && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-400">
             {scanError}
           </div>
         )}
 
-        {/* Progress log */}
         {logEntries.length > 0 && <ScanProgress entries={logEntries} scanning={scanLoading} />}
 
-        {/* Empty state */}
-        {!results && !scanLoading && logEntries.length === 0 && !scanError && (
+        {!scanResults && !scanLoading && logEntries.length === 0 && !scanError && (
           <div className="rounded-xl border border-dashed border-divider py-14 px-8 text-center">
-            <p className="text-sm font-medium text-subtle mb-1">Select a universe and run</p>
+            <p className="text-sm font-medium text-subtle mb-1">Select a universe and scan</p>
             <p className="text-xs text-muted max-w-sm mx-auto">
-              Scans all pairs for cointegration, backtests each surviving pair, and ranks by Sharpe.
-              Select pairs from the results to run a portfolio simulation.
+              Finds all cointegrated pairs in the universe. Select pairs to proceed to backtest.
             </p>
           </div>
         )}
 
-        {/* No results */}
-        {results && results.length === 0 && (
+        {/* Scan results table */}
+        {scanResults && scanResults.length === 0 && (
           <div className="rounded-xl border border-dashed border-divider py-10 px-8 text-center">
-            <p className="text-sm font-medium text-subtle mb-1">No pairs survived all filters</p>
+            <p className="text-sm font-medium text-subtle mb-1">No cointegrated pairs found</p>
             <p className="text-xs text-muted max-w-sm mx-auto">
-              Lower the correlation threshold or use a larger lookback window.
+              Lower the correlation threshold or use a longer lookback window.
             </p>
           </div>
         )}
 
-        {/* Results table */}
-        {results && results.length > 0 && (
+        {scanResults && scanResults.length > 0 && (
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div>
                 <h2 className="text-sm font-semibold text-subtle">
-                  Top {results.length} pairs — {resultMeta?.label}
+                  {scanResults.length} cointegrated pair{scanResults.length !== 1 ? "s" : ""} — {scanMeta?.label}
                 </h2>
-                <p className="text-xs text-muted mt-0.5">
-                  {resultMeta?.total} pairs backtested · ranked by Sharpe · click headers to sort
-                </p>
+                <p className="text-xs text-muted mt-0.5">ranked by p-value · click headers to sort · select pairs for backtest</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-faint">{selectedPairs.size} selected</span>
@@ -425,20 +471,17 @@ export default function UniversePage() {
                     <th className="px-3 py-2 w-6" />
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide w-6">#</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Pair</th>
-                    <SortHeader col="sharpe_ratio" label="Sharpe" />
-                    <SortHeader col="total_return" label="Return" />
-                    <SortHeader col="max_drawdown" label="Drawdown" />
-                    <SortHeader col="num_trades" label="Trades" />
-                    <SortHeader col="win_rate" label="Win %" />
-                    <SortHeader col="profit_factor" label="PF" />
                     <SortHeader col="pvalue" label="p-val" />
+                    <SortHeader col="adjusted_pvalue" label="adj p-val" />
                     <SortHeader col="half_life" label="HL (d)" />
                     <SortHeader col="correlation" label="ρ" />
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">β</th>
+                    <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Stable</th>
                     <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
-                  {sorted.map((pair, i) => {
+                  {sortedScanResults.map((pair, i) => {
                     const key = pairKey(pair.ticker1, pair.ticker2);
                     const checked = selectedPairs.has(key);
                     return (
@@ -462,15 +505,20 @@ export default function UniversePage() {
                           <span className="text-faint mx-1">/</span>
                           <span className="font-mono font-semibold text-subtle">{pair.ticker2}</span>
                         </td>
-                        <td className="px-3 py-2 text-right font-mono"><SharpeCell v={pair.sharpe_ratio} /></td>
-                        <td className="px-3 py-2 text-right font-mono"><ReturnCell v={pair.total_return} /></td>
-                        <td className="px-3 py-2 text-right font-mono text-red-400">{fmtPct(pair.max_drawdown)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.num_trades}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.win_rate != null ? fmtPct(pair.win_rate) : "—"}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{fmt(pair.profit_factor)}</td>
                         <td className="px-3 py-2 text-right font-mono text-muted">{pair.pvalue.toFixed(4)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.half_life ?? "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.adjusted_pvalue.toFixed(4)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.half_life != null ? fmt(pair.half_life, 1) : "—"}</td>
                         <td className="px-3 py-2 text-right font-mono text-muted">{pair.correlation != null ? pair.correlation.toFixed(2) : "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono text-muted">{pair.hedge_ratio.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <span className={`text-xs font-mono ${
+                            pair.is_stable === true ? "text-green-400" :
+                            pair.is_stable === false ? "text-red-400" :
+                            "text-faint"
+                          }`}>
+                            {pair.is_stable === true ? "Yes" : pair.is_stable === false ? "No" : "—"}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                           <Link
                             href={`/?t1=${pair.ticker1}&t2=${pair.ticker2}`}
@@ -485,18 +533,89 @@ export default function UniversePage() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        )}
 
-            {/* Portfolio sim trigger */}
-            <div className="mt-4 pt-4 border-t border-divider space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="label">Position Sizing</p>
-                <div className="flex rounded-md border border-divider overflow-hidden">
-                  {([ ["equal", "Equal Weight"], ["inverse_vol", "Inverse Vol"], ["signal_strength", "Signal Strength"] ] as [SizingMethod, string][]).map(([val, label]) => (
+        {/* Step 02: Backtest */}
+        {scanResults && scanResults.length > 0 && (
+          <Card step="02" title="Backtest">
+            <ParameterControls params={btParams} onChange={setBtParams} />
+
+            <div className="mt-5 pt-4 border-t border-divider flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleBacktest}
+                disabled={btLoading || selectedPairs.size < 2}
+                className="px-5 py-2 bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-subtle text-sm font-medium rounded-md transition-colors"
+              >
+                {btLoading ? "Running backtests…" : `Backtest ${selectedPairs.size} pair${selectedPairs.size !== 1 ? "s" : ""}`}
+              </button>
+              {selectedPairs.size < 2 && (
+                <p className="text-xs text-faint">Select at least 2 pairs above</p>
+              )}
+              {btError && <p className="text-xs text-red-400">{btError}</p>}
+            </div>
+
+            {btResult && (
+              <div className="mt-5 pt-4 border-t border-divider">
+                <h3 className="section-heading mb-3">Per-Pair Results</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="border-b border-divider">
+                        <th className="px-3 py-2 text-left text-faint font-medium">Pair</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Sharpe</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Return</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Max DD</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Trades</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Win %</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">PF</th>
+                        <th className="px-3 py-2 text-right text-faint font-medium">Weight</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {btResult.pairs.map((p: PortfolioPairBreakdown) => (
+                        <tr key={`${p.ticker1}:${p.ticker2}`} className="border-b border-divider/40 hover:bg-surface/50 transition-colors">
+                          <td className="px-3 py-2 text-subtle">{p.ticker1} / {p.ticker2}</td>
+                          <td className={`px-3 py-2 text-right ${p.metrics.sharpe_ratio >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {p.metrics.sharpe_ratio.toFixed(2)}
+                          </td>
+                          <td className={`px-3 py-2 text-right ${p.metrics.total_return >= 0 ? "text-green-400" : "text-red-400"}`}>
+                            {fmtPct(p.metrics.total_return)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-red-400">{fmtPct(p.metrics.max_drawdown)}</td>
+                          <td className="px-3 py-2 text-right text-muted">{p.metrics.num_trades}</td>
+                          <td className="px-3 py-2 text-right text-muted">{p.metrics.win_rate != null ? fmtPct(p.metrics.win_rate) : "—"}</td>
+                          <td className="px-3 py-2 text-right text-muted">{fmt(p.metrics.profit_factor)}</td>
+                          <td className="px-3 py-2 text-right text-muted">{(p.weight * 100).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Step 03: Portfolio Simulation */}
+        {btResult && (
+          <Card step="03" title="Portfolio Simulation">
+            <div className="flex flex-wrap items-center gap-4 mb-5">
+              <div className="flex items-center gap-3">
+                <span className="label">Sizing Method</span>
+                <div className="flex items-center rounded-md border border-divider overflow-hidden">
+                  {(
+                    [
+                      { key: "equal" as SizingMethod, label: "Equal Weight" },
+                      { key: "inverse_vol" as SizingMethod, label: "Inverse Vol" },
+                      { key: "signal_strength" as SizingMethod, label: "Signal Strength" },
+                    ]
+                  ).map(({ key, label }) => (
                     <button
-                      key={val}
-                      onClick={() => { setSizingMethod(val); setPortfolioResult(null); }}
+                      key={key}
+                      onClick={() => { setSizingMethod(key); setPtResult(null); }}
                       className={`px-3 py-1 text-xs font-medium transition-colors border-r border-divider last:border-r-0 ${
-                        sizingMethod === val
+                        sizingMethod === key
                           ? "bg-primary/20 text-primary"
                           : "text-muted hover:text-subtle hover:bg-surface/60"
                       }`}
@@ -506,103 +625,95 @@ export default function UniversePage() {
                   ))}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-muted">
-                  {selectedPairs.size < 2
-                    ? "Select at least 2 pairs to run a portfolio simulation"
-                    : `${selectedPairs.size} pairs selected`}
-                </p>
-                <button
-                  onClick={handlePortfolioRun}
-                  disabled={selectedPairs.size < 2 || portfolioLoading}
-                  className="px-4 py-2 bg-primary hover:bg-primary-dark disabled:opacity-40 text-subtle text-xs font-medium rounded-md transition-colors"
-                >
-                  {portfolioLoading ? "Simulating…" : "Run Portfolio Simulation"}
-                </button>
-              </div>
+              <button
+                onClick={handlePortfolio}
+                disabled={ptLoading}
+                className="px-5 py-2 bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-subtle text-sm font-medium rounded-md transition-colors"
+              >
+                {ptLoading ? "Simulating…" : "Run Portfolio Simulation"}
+              </button>
+              {ptError && <p className="text-xs text-red-400">{ptError}</p>}
             </div>
+
+            {ptResult && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                  <MetricTile
+                    label="Portfolio Sharpe"
+                    value={ptResult.portfolio_metrics.sharpe_ratio.toFixed(2)}
+                    color={ptResult.portfolio_metrics.sharpe_ratio >= 0 ? "text-green-400" : "text-red-400"}
+                  />
+                  <MetricTile
+                    label="Total Return"
+                    value={fmtPct(ptResult.portfolio_metrics.total_return)}
+                    color={ptResult.portfolio_metrics.total_return >= 0 ? "text-green-400" : "text-red-400"}
+                  />
+                  <MetricTile
+                    label="Max Drawdown"
+                    value={fmtPct(ptResult.portfolio_metrics.max_drawdown)}
+                    color="text-red-400"
+                  />
+                  <MetricTile
+                    label="Total Trades"
+                    value={String(ptResult.portfolio_metrics.total_trades)}
+                    sub={`across ${ptResult.pairs.length} pairs`}
+                  />
+                </div>
+
+                <Card title="Portfolio Equity Curve">
+                  <EquityCurve
+                    data={{
+                      dates: ptResult.dates,
+                      equity_curve: ptResult.portfolio_equity,
+                    }}
+                  />
+                </Card>
+
+                <div className="mt-5">
+                  <Card title="Per-Pair Breakdown">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-divider">
+                            <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Pair</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Weight</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Sharpe</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Return</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Drawdown</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Trades</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Win %</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">PF</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-divider">
+                          {ptResult.pairs.map((p: PortfolioPairBreakdown) => (
+                            <tr key={`${p.ticker1}:${p.ticker2}`} className="hover:bg-surface/60 transition-colors">
+                              <td className="px-3 py-2">
+                                <span className="font-mono font-semibold text-subtle">{p.ticker1}</span>
+                                <span className="text-faint mx-1">/</span>
+                                <span className="font-mono font-semibold text-subtle">{p.ticker2}</span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-muted">{(p.weight * 100).toFixed(1)}%</td>
+                              <td className={`px-3 py-2 text-right font-mono ${p.metrics.sharpe_ratio >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                {p.metrics.sharpe_ratio.toFixed(2)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-mono ${p.metrics.total_return >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                {fmtPct(p.metrics.total_return)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-red-400">{fmtPct(p.metrics.max_drawdown)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-muted">{p.metrics.num_trades}</td>
+                              <td className="px-3 py-2 text-right font-mono text-muted">{p.metrics.win_rate != null ? fmtPct(p.metrics.win_rate) : "—"}</td>
+                              <td className="px-3 py-2 text-right font-mono text-muted">{fmt(p.metrics.profit_factor)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                </div>
+              </>
+            )}
           </Card>
-        )}
-
-        {/* Portfolio error */}
-        {portfolioError && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-400">
-            {portfolioError}
-          </div>
-        )}
-
-        {/* Portfolio results */}
-        {portfolioResult && (
-          <div className="space-y-5">
-            {/* Metric tiles */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <MetricTile
-                label="Portfolio Sharpe"
-                value={portfolioResult.portfolio_metrics.sharpe_ratio.toFixed(2)}
-              />
-              <MetricTile
-                label="Total Return"
-                value={fmtPct(portfolioResult.portfolio_metrics.total_return)}
-              />
-              <MetricTile
-                label="Max Drawdown"
-                value={fmtPct(portfolioResult.portfolio_metrics.max_drawdown)}
-              />
-              <MetricTile
-                label="Total Trades"
-                value={String(portfolioResult.portfolio_metrics.total_trades)}
-                sub={`across ${portfolioResult.pairs.length} pairs`}
-              />
-            </div>
-
-            {/* Equity curve */}
-            <Card title="Portfolio Equity Curve">
-              <EquityCurve
-                data={{
-                  dates: portfolioResult.dates,
-                  equity_curve: portfolioResult.portfolio_equity,
-                }}
-              />
-            </Card>
-
-            {/* Per-pair breakdown */}
-            <Card title="Per-Pair Breakdown">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-divider">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide">Pair</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Weight</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Sharpe</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Return</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Drawdown</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Trades</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">Win %</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wide">PF</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-divider">
-                    {portfolioResult.pairs.map((p) => (
-                      <tr key={pairKey(p.ticker1, p.ticker2)} className="hover:bg-surface/60 transition-colors">
-                        <td className="px-3 py-2">
-                          <span className="font-mono font-semibold text-subtle">{p.ticker1}</span>
-                          <span className="text-faint mx-1">/</span>
-                          <span className="font-mono font-semibold text-subtle">{p.ticker2}</span>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{(p.weight * 100).toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right font-mono"><SharpeCell v={p.metrics.sharpe_ratio} /></td>
-                        <td className="px-3 py-2 text-right font-mono"><ReturnCell v={p.metrics.total_return} /></td>
-                        <td className="px-3 py-2 text-right font-mono text-red-400">{fmtPct(p.metrics.max_drawdown)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{p.metrics.num_trades}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{p.metrics.win_rate != null ? fmtPct(p.metrics.win_rate) : "—"}</td>
-                        <td className="px-3 py-2 text-right font-mono text-muted">{fmt(p.metrics.profit_factor)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
         )}
 
       </main>

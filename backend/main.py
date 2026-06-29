@@ -719,6 +719,107 @@ def universe_scan_stream(req: UniverseScanRequest) -> StreamingResponse:
     )
 
 
+class UniverseScanOnlyRequest(BaseModel):
+    universe: str = Field(default="sp100")
+    top_n: int = Field(default=50, ge=5, le=500)
+    corr_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    lookback_days: int = Field(default=365, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "UniverseScanOnlyRequest":
+        if self.universe not in UNIVERSES:
+            raise ValueError(f"universe must be one of: {', '.join(UNIVERSES.keys())}.")
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        return self
+
+
+@app.post("/api/universe/scan/stream")
+def universe_scan_only_stream(req: UniverseScanOnlyRequest) -> StreamingResponse:
+    """
+    SSE stream for universe cointegration scan only — no backtest step.
+
+    Events: fetching → fetch_done → correlation_done → coint_progress →
+            coint_done → bh_correction → complete
+    complete: {pairs, universe, label}
+    where each pair has ticker1/2, pvalue, adjusted_pvalue, bh_significant,
+    hedge_ratio, zscore, half_life, is_cointegrated, is_stable, correlation.
+    """
+    from statsmodels.stats.multitest import multipletests
+
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def generate():
+        try:
+            tickers = UNIVERSES[req.universe]
+            label = UNIVERSE_LABELS[req.universe]
+            yield _event({"type": "fetching", "universe": req.universe, "label": label, "count": len(tickers)})
+
+            prices = fetch_prices_batch(tickers, req.lookback_days)
+            available = list(prices.columns)
+            yield _event({"type": "fetch_done", "loaded": len(available)})
+
+            returns = prices.pct_change().dropna()
+            corr_matrix = returns.corr().abs()
+
+            all_pairs = list(combinations(available, 2))
+            filtered: list[tuple[str, str, float]] = []
+            for t1, t2 in all_pairs:
+                corr = float(corr_matrix.loc[t1, t2])
+                if corr >= req.corr_threshold:
+                    filtered.append((t1, t2, corr))
+
+            yield _event({"type": "correlation_done", "total_pairs": len(all_pairs), "passed": len(filtered)})
+
+            if not filtered:
+                yield _event({"type": "complete", "pairs": [], "universe": req.universe, "label": label})
+                return
+
+            batch_pairs = [(t1, t2) for t1, t2, _ in filtered]
+            coint_results = scan_pairs_batch(prices, batch_pairs, req.zscore_window)
+            for i, (result, (t1, t2, corr)) in enumerate(zip(coint_results, filtered)):
+                result["correlation"] = round(corr, 4)
+                done = i + 1
+                if done % 100 == 0 or done == len(filtered):
+                    yield _event({"type": "coint_progress", "done": done, "total": len(filtered)})
+
+            cointegrated = [r for r in coint_results if r.get("is_cointegrated")]
+            yield _event({"type": "coint_done", "cointegrated": len(cointegrated)})
+
+            if len(coint_results) > 1:
+                pvalues = [r["pvalue"] for r in coint_results]
+                _, adj_pvalues, _, _ = multipletests(pvalues, alpha=0.1, method="fdr_bh")
+                for r, adj_p in zip(coint_results, adj_pvalues):
+                    r["adjusted_pvalue"] = round(float(adj_p), 4)
+                    r["bh_significant"] = bool(adj_p < 0.1)
+            else:
+                for r in coint_results:
+                    r["adjusted_pvalue"] = r["pvalue"]
+                    r["bh_significant"] = bool(r["pvalue"] < 0.1)
+
+            bh_pairs = [r for r in coint_results if r.get("bh_significant")]
+            yield _event({"type": "bh_correction", "significant": len(bh_pairs)})
+
+            top = sorted(bh_pairs, key=lambda x: x["pvalue"])[: req.top_n]
+            yield _event({"type": "complete", "pairs": top, "universe": req.universe, "label": label})
+
+        except ValueError as exc:
+            yield _event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            yield _event({"type": "error", "message": f"Universe scan failed: {exc}"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 class PairSpec(BaseModel):
     ticker1: str = Field(..., min_length=1, max_length=10)
     ticker2: str = Field(..., min_length=1, max_length=10)

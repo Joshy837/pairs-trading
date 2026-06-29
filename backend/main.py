@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 
 from backtest import compute_max_drawdown, compute_sharpe, run_backtest
-from cointegration import analyze_pair, scan_pair
+from cointegration import analyze_pair, scan_pair, scan_pairs_batch
 from data import fetch_benchmark, fetch_factor_prices, fetch_factor_stock_prices, fetch_prices, fetch_prices_batch, fetch_sectors
 from universes import UNIVERSE_LABELS, UNIVERSES
 from factor import (
@@ -162,19 +162,15 @@ def scan(req: ScanRequest) -> dict:
         if req.sector_filter:
             sectors = fetch_sectors(available)
 
-        results = []
+        pairs_to_scan = []
         for t1, t2 in combinations(available, 2):
-            # Skip cross-sector pairs when sector filter is enabled;
-            # allow through if either sector is unknown (None) to avoid false exclusions
             if req.sector_filter:
                 s1, s2 = sectors.get(t1), sectors.get(t2)
                 if s1 is not None and s2 is not None and s1 != s2:
                     continue
-            try:
-                result = scan_pair(prices[t1], prices[t2], t1, t2, req.zscore_window)
-                results.append(result)
-            except Exception:
-                pass  # skip pairs that fail (insufficient variance, etc.)
+            pairs_to_scan.append((t1, t2))
+
+        results = scan_pairs_batch(prices, pairs_to_scan, req.zscore_window)
 
         # Benjamini-Hochberg correction for multiple comparisons (FDR = 10%)
         if len(results) > 1:
@@ -245,15 +241,13 @@ def scan_stream(req: ScanRequest) -> StreamingResponse:
 
             yield _event({"type": "correlation_done", "total": len(all_pairs), "passed": len(filtered)})
 
+            batch_pairs = [(t1, t2) for t1, t2, _ in filtered]
+            batch_results = scan_pairs_batch(prices, batch_pairs, req.zscore_window)
             results = []
-            for t1, t2, corr in filtered:
-                try:
-                    result = scan_pair(prices[t1], prices[t2], t1, t2, req.zscore_window)
-                    result["correlation"] = round(corr, 4)
-                    results.append(result)
-                    yield _event({"type": "coint_result", "ticker1": t1, "ticker2": t2, "pvalue": result["pvalue"], "is_cointegrated": result["is_cointegrated"]})
-                except Exception:
-                    yield _event({"type": "coint_result", "ticker1": t1, "ticker2": t2, "pvalue": None, "is_cointegrated": False})
+            for result, (t1, t2, corr) in zip(batch_results, filtered):
+                result["correlation"] = round(corr, 4)
+                results.append(result)
+                yield _event({"type": "coint_result", "ticker1": t1, "ticker2": t2, "pvalue": result["pvalue"], "is_cointegrated": result["is_cointegrated"]})
 
             yield _event({"type": "bh_correction"})
 
@@ -586,12 +580,6 @@ def universe_scan_stream(req: UniverseScanRequest) -> StreamingResponse:
     def _event(payload: dict) -> str:
         return f"data: {_json.dumps(payload)}\n\n"
 
-    def _run_coint(args):
-        t1, t2, corr, prices, zscore_window = args
-        result = scan_pair(prices[t1], prices[t2], t1, t2, zscore_window)
-        result["correlation"] = round(corr, 4)
-        return result
-
     def _run_backtest(args):
         t1, t2, prices, req_ = args
         bt = run_backtest(
@@ -633,23 +621,14 @@ def universe_scan_stream(req: UniverseScanRequest) -> StreamingResponse:
                 yield _event({"type": "complete", "pairs": [], "universe": req.universe, "label": label, "total_backtested": 0})
                 return
 
-            # Cointegration tests (parallelised)
-            coint_results: list[dict] = []
-            workers = min(16, len(filtered))
-            coint_args = [(t1, t2, corr, prices, req.zscore_window) for t1, t2, corr in filtered]
-
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(_run_coint, args): args for args in coint_args}
-                done_count = 0
-                for future in futures_as_completed(futures):
-                    done_count += 1
-                    try:
-                        result = future.result()
-                        coint_results.append(result)
-                    except Exception:
-                        pass
-                    if done_count % 100 == 0 or done_count == len(filtered):
-                        yield _event({"type": "coint_progress", "done": done_count, "total": len(filtered)})
+            # Cointegration tests (vectorised batch)
+            batch_pairs = [(t1, t2) for t1, t2, _ in filtered]
+            coint_results = scan_pairs_batch(prices, batch_pairs, req.zscore_window)
+            for i, (result, (t1, t2, corr)) in enumerate(zip(coint_results, filtered)):
+                result["correlation"] = round(corr, 4)
+                done = i + 1
+                if done % 100 == 0 or done == len(filtered):
+                    yield _event({"type": "coint_progress", "done": done, "total": len(filtered)})
 
             cointegrated = [r for r in coint_results if r.get("is_cointegrated")]
             yield _event({"type": "coint_done", "cointegrated": len(cointegrated)})
@@ -676,6 +655,7 @@ def universe_scan_stream(req: UniverseScanRequest) -> StreamingResponse:
             # Backtest each BH-significant pair (parallelised)
             bt_args = [(r["ticker1"], r["ticker2"], prices, req) for r in bh_pairs]
             bt_results: dict[str, dict] = {}
+            workers = min(16, len(bh_pairs))
 
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 futures = {executor.submit(_run_backtest, args): args for args in bt_args}

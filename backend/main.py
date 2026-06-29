@@ -10,9 +10,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 
-from backtest import run_backtest
+from backtest import compute_max_drawdown, compute_sharpe, run_backtest
 from cointegration import analyze_pair, scan_pair
 from data import fetch_benchmark, fetch_factor_prices, fetch_factor_stock_prices, fetch_prices, fetch_prices_batch, fetch_sectors
+from universes import UNIVERSE_LABELS, UNIVERSES
 from factor import (
     analyze_factor_pair,
     analyze_factor_stock,
@@ -525,6 +526,346 @@ def factor_analyze_stream(req: FactorAnalyzeRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class UniverseScanRequest(BaseModel):
+    universe: str = Field(default="sp100")
+    top_n: int = Field(default=50, ge=5, le=500)
+    corr_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    lookback_days: int = Field(default=365, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+    entry_z: float = Field(default=2.0, ge=0.5, le=4.0)
+    exit_z: float = Field(default=0.5, ge=0.0, le=2.0)
+    stop_z: float = Field(default=4.0, ge=2.5, le=6.0)
+    transaction_cost_bps: float = Field(default=5.0, ge=0.0, le=50.0)
+    insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
+    use_kalman: bool = Field(default=False)
+    use_regime: bool = Field(default=False)
+    use_log_prices: bool = Field(default=False)
+    use_vol_target: bool = Field(default=False)
+    max_holding_days: Optional[int] = Field(default=None, ge=5, le=200)
+    use_halflife_hold: bool = Field(default=False)
+    halflife_multiplier: float = Field(default=2.0, ge=0.5, le=2.0)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "UniverseScanRequest":
+        if self.universe not in UNIVERSES:
+            raise ValueError(f"universe must be one of: {', '.join(UNIVERSES.keys())}.")
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        if self.exit_z >= self.entry_z:
+            raise ValueError("exit_z must be strictly less than entry_z.")
+        if self.entry_z >= self.stop_z:
+            raise ValueError("stop_z must be strictly greater than entry_z.")
+        return self
+
+
+@app.post("/api/universe/stream")
+def universe_scan_stream(req: UniverseScanRequest) -> StreamingResponse:
+    """
+    SSE stream of the full universe scan pipeline:
+      fetch prices → correlation filter → cointegration → BH correction → backtest → rank
+
+    Events (JSON in data: field):
+      fetching          — {universe, label, count}
+      fetch_done        — {loaded}
+      correlation_done  — {total_pairs, passed}
+      coint_progress    — {done, total}  (periodic, every 100 pairs)
+      coint_done        — {cointegrated}
+      bh_correction     — {significant}
+      backtest_progress — {done, total}  (periodic, every 10 pairs)
+      complete          — {pairs, universe, label, total_backtested}
+      error             — {message}
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed as futures_as_completed
+    from statsmodels.stats.multitest import multipletests
+
+    def _event(payload: dict) -> str:
+        return f"data: {_json.dumps(payload)}\n\n"
+
+    def _run_coint(args):
+        t1, t2, corr, prices, zscore_window = args
+        result = scan_pair(prices[t1], prices[t2], t1, t2, zscore_window)
+        result["correlation"] = round(corr, 4)
+        return result
+
+    def _run_backtest(args):
+        t1, t2, prices, req_ = args
+        bt = run_backtest(
+            prices[t1], prices[t2],
+            req_.zscore_window, req_.entry_z, req_.exit_z, req_.stop_z,
+            req_.transaction_cost_bps, req_.insample_pct,
+            req_.use_kalman, req_.use_regime, req_.use_log_prices,
+            max_holding_days=req_.max_holding_days,
+            use_halflife_hold=req_.use_halflife_hold,
+            halflife_multiplier=req_.halflife_multiplier,
+            use_vol_target=req_.use_vol_target,
+        )
+        return {"ticker1": t1, "ticker2": t2, "metrics": bt["metrics"]}
+
+    def generate():
+        try:
+            tickers = UNIVERSES[req.universe]
+            label = UNIVERSE_LABELS[req.universe]
+            yield _event({"type": "fetching", "universe": req.universe, "label": label, "count": len(tickers)})
+
+            prices = fetch_prices_batch(tickers, req.lookback_days)
+            available = list(prices.columns)
+            yield _event({"type": "fetch_done", "loaded": len(available)})
+
+            # Pairwise correlation filter (vectorized)
+            returns = prices.pct_change().dropna()
+            corr_matrix = returns.corr().abs()
+
+            all_pairs = list(combinations(available, 2))
+            filtered: list[tuple[str, str, float]] = []
+            for t1, t2 in all_pairs:
+                corr = float(corr_matrix.loc[t1, t2])
+                if corr >= req.corr_threshold:
+                    filtered.append((t1, t2, corr))
+
+            yield _event({"type": "correlation_done", "total_pairs": len(all_pairs), "passed": len(filtered)})
+
+            if not filtered:
+                yield _event({"type": "complete", "pairs": [], "universe": req.universe, "label": label, "total_backtested": 0})
+                return
+
+            # Cointegration tests (parallelised)
+            coint_results: list[dict] = []
+            workers = min(16, len(filtered))
+            coint_args = [(t1, t2, corr, prices, req.zscore_window) for t1, t2, corr in filtered]
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_run_coint, args): args for args in coint_args}
+                done_count = 0
+                for future in futures_as_completed(futures):
+                    done_count += 1
+                    try:
+                        result = future.result()
+                        coint_results.append(result)
+                    except Exception:
+                        pass
+                    if done_count % 100 == 0 or done_count == len(filtered):
+                        yield _event({"type": "coint_progress", "done": done_count, "total": len(filtered)})
+
+            cointegrated = [r for r in coint_results if r.get("is_cointegrated")]
+            yield _event({"type": "coint_done", "cointegrated": len(cointegrated)})
+
+            # Benjamini-Hochberg correction
+            if len(coint_results) > 1:
+                pvalues = [r["pvalue"] for r in coint_results]
+                _, adj_pvalues, _, _ = multipletests(pvalues, alpha=0.1, method="fdr_bh")
+                for r, adj_p in zip(coint_results, adj_pvalues):
+                    r["adjusted_pvalue"] = round(float(adj_p), 4)
+                    r["bh_significant"] = bool(adj_p < 0.1)
+            else:
+                for r in coint_results:
+                    r["adjusted_pvalue"] = r["pvalue"]
+                    r["bh_significant"] = bool(r["pvalue"] < 0.1)
+
+            bh_pairs = [r for r in coint_results if r.get("bh_significant")]
+            yield _event({"type": "bh_correction", "significant": len(bh_pairs)})
+
+            if not bh_pairs:
+                yield _event({"type": "complete", "pairs": [], "universe": req.universe, "label": label, "total_backtested": 0})
+                return
+
+            # Backtest each BH-significant pair (parallelised)
+            bt_args = [(r["ticker1"], r["ticker2"], prices, req) for r in bh_pairs]
+            bt_results: dict[str, dict] = {}
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_run_backtest, args): args for args in bt_args}
+                done_count = 0
+                for future in futures_as_completed(futures):
+                    done_count += 1
+                    try:
+                        bt = future.result()
+                        key = f"{bt['ticker1']}:{bt['ticker2']}"
+                        bt_results[key] = bt
+                    except Exception:
+                        pass
+                    if done_count % 10 == 0 or done_count == len(bh_pairs):
+                        yield _event({"type": "backtest_progress", "done": done_count, "total": len(bh_pairs)})
+
+            # Merge coint stats + backtest metrics and rank by Sharpe
+            combined: list[dict] = []
+            for r in bh_pairs:
+                key = f"{r['ticker1']}:{r['ticker2']}"
+                bt = bt_results.get(key)
+                if bt is None:
+                    continue
+                metrics = bt["metrics"]
+                combined.append({
+                    "ticker1": r["ticker1"],
+                    "ticker2": r["ticker2"],
+                    "pvalue": r["pvalue"],
+                    "adjusted_pvalue": r["adjusted_pvalue"],
+                    "hedge_ratio": r["hedge_ratio"],
+                    "half_life": r.get("half_life"),
+                    "correlation": r.get("correlation"),
+                    "sharpe_ratio": metrics["sharpe_ratio"],
+                    "total_return": metrics["total_return"],
+                    "max_drawdown": metrics["max_drawdown"],
+                    "num_trades": metrics["num_trades"],
+                    "win_rate": metrics.get("win_rate"),
+                    "profit_factor": metrics.get("profit_factor"),
+                    "calmar_ratio": metrics.get("calmar_ratio"),
+                })
+
+            combined.sort(key=lambda x: x["sharpe_ratio"], reverse=True)
+            top = combined[: req.top_n]
+
+            yield _event({
+                "type": "complete",
+                "pairs": top,
+                "universe": req.universe,
+                "label": label,
+                "total_backtested": len(combined),
+            })
+
+        except ValueError as exc:
+            yield _event({"type": "error", "message": str(exc)})
+        except Exception as exc:
+            yield _event({"type": "error", "message": f"Universe scan failed: {exc}"})
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class PairSpec(BaseModel):
+    ticker1: str = Field(..., min_length=1, max_length=10)
+    ticker2: str = Field(..., min_length=1, max_length=10)
+
+
+class PortfolioBacktestRequest(BaseModel):
+    pairs: list[PairSpec] = Field(..., min_length=2, max_length=50)
+    lookback_days: int = Field(default=365, ge=90, le=1825)
+    zscore_window: int = Field(default=30, ge=10, le=120)
+    entry_z: float = Field(default=2.0, ge=0.5, le=4.0)
+    exit_z: float = Field(default=0.5, ge=0.0, le=2.0)
+    stop_z: float = Field(default=4.0, ge=2.5, le=6.0)
+    transaction_cost_bps: float = Field(default=5.0, ge=0.0, le=50.0)
+    insample_pct: float = Field(default=0.7, ge=0.5, le=0.9)
+    use_kalman: bool = Field(default=False)
+    use_regime: bool = Field(default=False)
+    use_log_prices: bool = Field(default=False)
+    use_vol_target: bool = Field(default=False)
+    max_holding_days: Optional[int] = Field(default=None, ge=5, le=200)
+    use_halflife_hold: bool = Field(default=False)
+    halflife_multiplier: float = Field(default=2.0, ge=0.5, le=2.0)
+
+    @model_validator(mode="after")
+    def check_valid(self) -> "PortfolioBacktestRequest":
+        if self.lookback_days < self.zscore_window * 3:
+            raise ValueError(
+                f"lookback_days ({self.lookback_days}) must be at least "
+                f"3× zscore_window ({self.zscore_window * 3} days minimum)."
+            )
+        if self.exit_z >= self.entry_z:
+            raise ValueError("exit_z must be strictly less than entry_z.")
+        if self.entry_z >= self.stop_z:
+            raise ValueError("stop_z must be strictly greater than entry_z.")
+        return self
+
+
+@app.post("/api/portfolio/backtest")
+def portfolio_backtest(req: PortfolioBacktestRequest) -> dict:
+    """
+    Run equal-weight portfolio simulation across a list of pairs.
+
+    Fetches prices for all unique tickers, backtests each pair independently,
+    then averages daily OOS returns across pairs to produce a combined equity
+    curve and portfolio-level metrics.
+    """
+    import pandas as pd
+    from concurrent.futures import ThreadPoolExecutor, as_completed as futures_as_completed
+
+    try:
+        unique_tickers = list({t for p in req.pairs for t in (p.ticker1.upper(), p.ticker2.upper())})
+        prices = fetch_prices_batch(unique_tickers, req.lookback_days)
+        available = set(prices.columns)
+
+        valid_pairs = [p for p in req.pairs if p.ticker1.upper() in available and p.ticker2.upper() in available]
+        if len(valid_pairs) < 2:
+            raise HTTPException(status_code=400, detail="Fewer than 2 valid pairs after price fetch.")
+
+        def _run_one(pair: PairSpec):
+            t1, t2 = pair.ticker1.upper(), pair.ticker2.upper()
+            bt = run_backtest(
+                prices[t1], prices[t2],
+                req.zscore_window, req.entry_z, req.exit_z, req.stop_z,
+                req.transaction_cost_bps, req.insample_pct,
+                req.use_kalman, req.use_regime, req.use_log_prices,
+                max_holding_days=req.max_holding_days,
+                use_halflife_hold=req.use_halflife_hold,
+                halflife_multiplier=req.halflife_multiplier,
+                use_vol_target=req.use_vol_target,
+            )
+            return t1, t2, bt
+
+        pair_results: list[tuple] = []
+        with ThreadPoolExecutor(max_workers=min(16, len(valid_pairs))) as executor:
+            futures_map = {executor.submit(_run_one, p): p for p in valid_pairs}
+            for future in futures_as_completed(futures_map):
+                try:
+                    pair_results.append(future.result())
+                except Exception:
+                    pass
+
+        if not pair_results:
+            raise HTTPException(status_code=400, detail="All pair backtests failed.")
+
+        # Build per-pair OOS daily return series indexed by date
+        returns_list = []
+        for t1, t2, bt in pair_results:
+            oos_data = [(d, e) for d, e in zip(bt["dates"], bt["equity_curve"]) if e is not None]
+            if not oos_data:
+                continue
+            oos_dates, oos_equity = zip(*oos_data)
+            s = pd.Series(list(oos_equity), index=pd.to_datetime(list(oos_dates)))
+            ret = s.pct_change().fillna(0)
+            returns_list.append(ret.rename(f"{t1}:{t2}"))
+
+        if not returns_list:
+            raise HTTPException(status_code=400, detail="No out-of-sample data available.")
+
+        # Equal-weight portfolio: average daily returns across all pairs
+        ret_df = pd.concat(returns_list, axis=1).fillna(0)
+        portfolio_ret = ret_df.mean(axis=1)
+        portfolio_equity = (1 + portfolio_ret).cumprod() * 100
+
+        total_return = float(portfolio_equity.iloc[-1] / 100 - 1)
+        max_dd = compute_max_drawdown(portfolio_equity)
+        sharpe = compute_sharpe(portfolio_ret)
+        total_trades = sum(bt["metrics"]["num_trades"] for _, _, bt in pair_results)
+
+        return {
+            "portfolio_equity": [round(float(v), 2) for v in portfolio_equity],
+            "dates": portfolio_equity.index.strftime("%Y-%m-%d").tolist(),
+            "portfolio_metrics": {
+                "sharpe_ratio": round(sharpe, 3),
+                "total_return": round(total_return, 4),
+                "max_drawdown": round(max_dd, 4),
+                "total_trades": total_trades,
+            },
+            "pairs": [
+                {"ticker1": t1, "ticker2": t2, "metrics": bt["metrics"]}
+                for t1, t2, bt in sorted(pair_results, key=lambda x: x[2]["metrics"]["sharpe_ratio"], reverse=True)
+            ],
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Portfolio backtest failed: {exc}")
 
 
 @app.post("/api/backtest")

@@ -30,6 +30,9 @@ export default function Navbar() {
           <Link href="/factor" className={linkCls("/factor")}>
             Factor
           </Link>
+          <Link href="/universe" className={linkCls("/universe")}>
+            Universe
+          </Link>
         </nav>
       </div>
     </header>

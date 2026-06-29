@@ -153,3 +153,38 @@ export interface ScanResponse {
   tickers: string[];
   sectors: Record<string, string | null>;
 }
+
+export interface PortfolioPairBreakdown {
+  ticker1: string;
+  ticker2: string;
+  metrics: BacktestMetrics;
+}
+
+export interface PortfolioResult {
+  portfolio_equity: number[];
+  dates: string[];
+  portfolio_metrics: {
+    sharpe_ratio: number;
+    total_return: number;
+    max_drawdown: number;
+    total_trades: number;
+  };
+  pairs: PortfolioPairBreakdown[];
+}
+
+export interface UniversePairResult {
+  ticker1: string;
+  ticker2: string;
+  pvalue: number;
+  adjusted_pvalue: number;
+  hedge_ratio: number;
+  half_life: number | null;
+  correlation: number | null;
+  sharpe_ratio: number;
+  total_return: number;
+  max_drawdown: number;
+  num_trades: number;
+  win_rate: number | null;
+  profit_factor: number | null;
+  calmar_ratio: number | null;
+}
